@@ -1,0 +1,25 @@
+/* Patch Container - Handles positioning and rotation */
+.patch-container {
+  position: absolute;
+  /* GPU-accelerated transforms */
+  transform-origin: center center;
+  will-change: transform;
+  z-index: 10;
+}
+
+/* Base Patch Styling */
+.patch {
+  box-sizing: border-box;
+  /* Shadow is applied to the container */
+  /* Border is defined in SVG elements via stroke */
+}
+
+/* Square Patch - 50px × 50px */
+.patch-square {
+  display: block;
+}
+
+/* Rectangle Patch - 100px × 50px (2 cells wide) */
+.patch-rectangle {
+  display: block;
+}

@@ -1,38 +1,94 @@
-.App {
-  text-align: center;
-}
+/**
+ * Weird Carpet - Phase 1 Styles
+ * Foundation & Visual Structure
+ */
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-}
-
-.App-header {
-  background-color: #282c34;
+/* App Container - Centers viewport on page */
+.app {
+  display: flex;
+  justify-content: center;
+  align-items: center;
   min-height: 100vh;
+  background-color: #f5f5f5; /* Subtle gray background for page */
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+/* Viewport - Main game container (400px × 700px) */
+.viewport {
+  width: min(400px, 100vw); /* Responsive: 400px on desktop, scales to viewport on mobile */
+  max-width: 400px;
+  height: 700px; /* Changed from 900px to 700px */
+  background-color: #ffffff;
+  /* Removed box-shadow - no decorative card styling */
+  border-radius: 0; /* Removed border radius - clean edges */
+  overflow: hidden;
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+/* Falling Zone - Top 200px where patches descend (Phase 2+) */
+.falling-zone {
+  width: 100%;
+  height: 200px;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(250, 250, 250, 0.5) 100%
+  );
+  position: relative;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* Carpet Zone - 300px × 400px grid area */
+.carpet-zone {
+  width: 100%; /* Take full viewport width (max 400px from parent) */
+  height: 400px; /* 6 cols × 8 rows = 300×400px */
+  position: relative;
+  background-color: transparent; /* No background - only grid lines visible */
+  display: flex;
+  justify-content: center; /* Center grid on mobile */
+}
+
+/* Bottom Margin - 100px UI space */
+.bottom-margin {
+  width: 100%;
+  height: 100px;
+  background-color: #ffffff;
+  display: flex;
   align-items: center;
   justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
 }
 
-.App-link {
-  color: #61dafb;
-}
-
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
+/* Mobile-First Responsive Design */
+@media (max-width: 440px) {
+  .app {
+    padding: 5px; /* Reduce padding on mobile */
   }
-  to {
-    transform: rotate(360deg);
+
+  .viewport {
+    width: 100vw; /* Full viewport width on mobile */
+    max-width: 400px;
+    height: 700px; /* Updated from 900px to 700px */
+    border-radius: 0; /* Remove border radius on mobile for edge-to-edge */
+  }
+
+  .carpet-zone {
+    width: 100%;
+  }
+}
+
+/* Extra small devices (portrait phones, 375px) */
+@media (max-width: 375px) {
+  .app {
+    padding: 0; /* No padding on very small devices */
+  }
+
+  .viewport {
+    height: auto;
+    min-height: 700px; /* Updated from 900px to 700px */
+    border-radius: 0;
   }
 }

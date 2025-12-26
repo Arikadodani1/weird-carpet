@@ -1,16 +1,18 @@
 // Grid Configuration
-export const GRID_ROWS = 8;
-export const GRID_COLS = 8;
+export const GRID_COLS = 6; // 6 columns (width)
+export const GRID_ROWS = 8; // 8 rows (height)
 export const CELL_SIZE = 50;
-export const GRID_SIZE = GRID_ROWS * GRID_COLS;
-export const GRID_WIDTH = GRID_COLS * CELL_SIZE; // 400px
+export const GRID_SIZE = GRID_ROWS * GRID_COLS; // 48 cells
+export const GRID_WIDTH = GRID_COLS * CELL_SIZE; // 300px
 export const GRID_HEIGHT = GRID_ROWS * CELL_SIZE; // 400px
 
 // Viewport
 export const VIEWPORT_WIDTH = 400;
-export const VIEWPORT_HEIGHT = 700;
+export const VIEWPORT_HEIGHT = 700; // 200 (falling) + 400 (carpet) + 100 (bottom)
 export const FALLING_ZONE_HEIGHT = 200;
-export const CARPET_ZONE_HEIGHT = GRID_HEIGHT;
+export const CARPET_ZONE_HEIGHT = GRID_HEIGHT; // 400px
+export const CARPET_ZONE_TOP = 200; // Where grid starts
+export const CARPET_ZONE_BOTTOM = FALLING_ZONE_HEIGHT + GRID_HEIGHT; // 600px (grid bottom collision point)
 export const BOTTOM_MARGIN_HEIGHT = 100;
 
 // Colors (Vibrant Palette)
@@ -50,5 +52,7 @@ export const PATCH_SHADOW = '0 2px 8px rgba(0,0,0,0.15)';
 export const PATCH_SHAPES = {
   SQUARE: 'square',
   RECTANGLE: 'rectangle',
-  TRIANGLE: 'triangle',
 };
+
+// Stitch Patterns (Phase 2)
+export const STITCH_PATTERNS = ['crossstitch', 'horizontal', 'diagonal', 'dots', 'vertical', 'chunky'] as const;
