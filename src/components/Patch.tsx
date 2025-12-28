@@ -1,5 +1,5 @@
 import React from 'react';
-import { CELL_SIZE, PATCH_BORDER, PATCH_SHADOW } from '../utils/constants';
+import { CELL_SIZE, PATCH_BORDER } from '../utils/constants';
 import './Patch.css';
 
 export type StitchPattern = 'crossstitch' | 'horizontal' | 'diagonal' | 'dots' | 'vertical' | 'chunky';
@@ -110,7 +110,6 @@ const Patch: React.FC<PatchProps> = ({ shape, color, pattern, x, y, rotation = 0
         top: `${y}px`,
         transform: `rotate(${rotation + wiggle}deg)`,
         willChange: 'transform',
-        boxShadow: PATCH_SHADOW,
       }}
     >
       {renderShape()}

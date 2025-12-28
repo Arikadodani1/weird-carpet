@@ -39,11 +39,12 @@ import type { Patch as PatchType, StitchPattern } from './types';
 function App() {
   const [fallingPatches, setFallingPatches] = useState<PatchType[]>([]);
   const [placedPatches, setPlacedPatches] = useState<PatchType[]>([]);
-  const [nextPatchId, setNextPatchId] = useState(0);
   const [canSpawnNext, setCanSpawnNext] = useState(true);
+  const [isGridFull, setIsGridFull] = useState(false);
 
   const animationFrameRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
+  const spawnTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Log grid configuration on startup
   useEffect(() => {
@@ -58,8 +59,23 @@ function App() {
     console.log('===================================');
   }, []);
 
+  // Check if grid is full (48+ cells occupied)
+  useEffect(() => {
+    const totalCells = placedPatches.reduce((sum, patch) => {
+      return sum + (patch.shape === 'rectangle' ? 2 : 1);
+    }, 0);
+    const gridFull = totalCells >= 48;
+    setIsGridFull(gridFull);
+    if (gridFull) {
+      console.log('Grid is full! Stopping patch generation.');
+    }
+  }, [placedPatches]);
+
   // Helper function to generate a random patch
-  const generatePatch = useCallback((id: number, offsetIndex: number): PatchType => {
+  const generatePatch = useCallback((offsetIndex: number): PatchType => {
+    // Generate unique ID
+    const uniqueId = `patch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
     // Only 2 shapes: Square and Rectangle (no triangles)
     const shapes: Array<'square' | 'rectangle'> = ['square', 'rectangle'];
     const shape = shapes[Math.floor(Math.random() * shapes.length)];
@@ -75,7 +91,7 @@ function App() {
     const startY = -CELL_SIZE - 10; // Just above falling zone
 
     const newPatch = {
-      id: `patch-${id}`,
+      id: uniqueId,
       shape,
       color,
       pattern,
@@ -86,7 +102,7 @@ function App() {
       wiggle: 0,
     };
 
-    console.log('Patch spawned:', { id: `patch-${id}`, x: startX, y: startY, shape });
+    console.log('Patch spawned:', { id: uniqueId, x: startX, y: startY, shape });
     return newPatch;
   }, []);
 
@@ -214,7 +230,10 @@ function App() {
           setPlacedPatches(prev => [...prev, ...newlyPlacedPatches]);
 
           // Allow new patch to spawn after delay (0.5s)
-          setTimeout(() => {
+          if (spawnTimeoutRef.current) {
+            clearTimeout(spawnTimeoutRef.current);
+          }
+          spawnTimeoutRef.current = setTimeout(() => {
             setCanSpawnNext(true);
           }, PATCH_GENERATION_DELAY);
         }
@@ -237,20 +256,36 @@ function App() {
 
   // Patch generation system
   useEffect(() => {
+    // Stop spawning if grid is full
+    if (isGridFull) {
+      return;
+    }
+
     if (canSpawnNext && fallingPatches.length < MAX_FALLING_PATCHES) {
-      const newPatch = generatePatch(nextPatchId, fallingPatches.length);
+      const newPatch = generatePatch(fallingPatches.length);
       setFallingPatches(prev => [...prev, newPatch]);
-      setNextPatchId(prev => prev + 1);
       setCanSpawnNext(false);
 
       // Allow next spawn after initial delay (for the very first patch)
       if (fallingPatches.length === 0) {
-        setTimeout(() => {
+        if (spawnTimeoutRef.current) {
+          clearTimeout(spawnTimeoutRef.current);
+        }
+        spawnTimeoutRef.current = setTimeout(() => {
           setCanSpawnNext(true);
         }, PATCH_GENERATION_DELAY);
       }
     }
-  }, [canSpawnNext, fallingPatches.length, generatePatch, nextPatchId]);
+  }, [canSpawnNext, fallingPatches.length, generatePatch, isGridFull]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (spawnTimeoutRef.current) {
+        clearTimeout(spawnTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="app">

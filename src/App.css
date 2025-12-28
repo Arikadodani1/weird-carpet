@@ -9,7 +9,7 @@
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background-color: #f5f5f5; /* Subtle gray background for page */
+  background-color: transparent;
   padding: 20px;
   box-sizing: border-box;
 }
@@ -19,7 +19,7 @@
   width: min(400px, 100vw); /* Responsive: 400px on desktop, scales to viewport on mobile */
   max-width: 400px;
   height: 700px; /* Changed from 900px to 700px */
-  background-color: #ffffff;
+  background-color: transparent;
   /* Removed box-shadow - no decorative card styling */
   border-radius: 0; /* Removed border radius - clean edges */
   overflow: hidden;
@@ -32,11 +32,7 @@
 .falling-zone {
   width: 100%;
   height: 200px;
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0.95) 0%,
-    rgba(250, 250, 250, 0.5) 100%
-  );
+  background-color: transparent;
   position: relative;
   border-bottom: 1px solid rgba(0, 0, 0, 0.05);
 }
@@ -55,7 +51,7 @@
 .bottom-margin {
   width: 100%;
   height: 100px;
-  background-color: #ffffff;
+  background-color: transparent;
   display: flex;
   align-items: center;
   justify-content: center;

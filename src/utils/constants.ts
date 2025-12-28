@@ -47,7 +47,6 @@ export const SNAP_DAMPING = 25;
 
 // Patch Visual
 export const PATCH_BORDER = 3; // px
-export const PATCH_SHADOW = '0 2px 8px rgba(0,0,0,0.15)';
 
 export const PATCH_SHAPES = {
   SQUARE: 'square',
