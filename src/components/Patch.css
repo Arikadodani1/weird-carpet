@@ -5,6 +5,8 @@
   transform-origin: center center;
   will-change: transform;
   z-index: 10;
+  /* Smooth rotation animation (Phase 3) */
+  transition: transform 200ms ease-out;
 }
 
 /* Base Patch Styling */
@@ -22,4 +24,25 @@
 /* Rectangle Patch - 100px × 50px (2 cells wide) */
 .patch-rectangle {
   display: block;
+}
+
+/* Phase 3: Interactive Falling Patches */
+.patch-container.is-falling {
+  touch-action: none; /* Prevent scroll/zoom while dragging */
+  cursor: grab;
+  user-select: none; /* Prevent text selection during drag */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+/* Dragging State - Visual Feedback */
+.patch-container.is-dragging {
+  cursor: grabbing;
+  z-index: 100; /* Bring to front while dragging */
+}
+
+/* Ensure SVG patches don't block pointer events */
+.patch-container .patch {
+  pointer-events: none; /* Let pointer events pass to container */
 }

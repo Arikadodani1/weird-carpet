@@ -7,11 +7,11 @@ export type StitchPattern = 'crossstitch' | 'horizontal' | 'diagonal' | 'dots' |
 
 export interface Patch {
   id: string;
-  shape: 'square' | 'rectangle';
+  shape: 'square'; // MVP: Only squares (50x50px)
   color: string;
   pattern: StitchPattern;
   position: Position;
-  rotation: number; // 0-360 degrees
+  rotation: number; // Always 0 in MVP
   isFalling: boolean;
   isPlaced: boolean;
   wiggle?: number; // Wiggle offset for falling animation (±5°)
