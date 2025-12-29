@@ -287,7 +287,12 @@ function App() {
   const handleDrag = useCallback((patchId: string, clientX: number, clientY: number) => {
     const state = getInteractionState(patchId);
     const patch = fallingPatches.find(p => p.id === patchId);
-    if (!patch) return;
+
+    // Safety: if patch disappeared, clear interaction state
+    if (!patch) {
+      clearInteractionState(patchId);
+      return;
+    }
 
     state.isDragging = true;
 
@@ -313,9 +318,9 @@ function App() {
           : p
       )
     );
-  }, [fallingPatches, getInteractionState]);
+  }, [fallingPatches, getInteractionState, clearInteractionState]);
 
-  // Handle drag end - snap to grid
+  // Handle drag end - snap to grid and re-evaluate validity
   const handleDragEnd = useCallback((patchId: string) => {
     setFallingPatches(prev =>
       prev.map(p =>
@@ -324,6 +329,14 @@ function App() {
           : p
       )
     );
+
+    // Clear invalid status - animation loop will re-evaluate on next frame
+    setInvalidPatchIds(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(patchId);
+      return newSet;
+    });
+
     clearInteractionState(patchId);
   }, [clearInteractionState]);
 
@@ -360,6 +373,10 @@ function App() {
     // Check other falling patches in same column that are BELOW this patch
     for (const other of allFallingPatches) {
       if (other.id === patch.id) continue;
+
+      // IMPORTANT: Skip patches that are being dragged - they shouldn't block
+      const otherInteractionState = interactionStateRef.current.get(other.id);
+      if (otherInteractionState?.isDragging) continue;
 
       const otherX = snapToGrid(other.position.x);
       const otherCol = Math.round((otherX - GRID_OFFSET_X) / CELL_SIZE);
