@@ -345,8 +345,6 @@ function App() {
   }, []);
 
   // Find effective stop position accounting for other falling patches
-  // BUG: Patches sometimes stop halfway down instead of continuing to fall - needs investigation
-  // This happens especially when invalid patches stack. May be related to the falling patch collision detection logic below
   const findEffectiveStopY = useCallback((patch: PatchType, allFallingPatches: PatchType[]): number => {
     const snappedX = snapToGrid(patch.position.x);
     const col = Math.round((snappedX - GRID_OFFSET_X) / CELL_SIZE);
@@ -358,8 +356,12 @@ function App() {
     if (stopY === -1) return -1;
 
     // Check other falling patches in same column that are BELOW this patch
+    // IMPORTANT: Skip invalid patches - they shouldn't block falling patches
     for (const other of allFallingPatches) {
       if (other.id === patch.id) continue;
+
+      // Skip invalid patches - they're temporary obstacles that should be transparent
+      if (invalidPatchIds.has(other.id)) continue;
 
       const otherX = snapToGrid(other.position.x);
       const otherCol = Math.round((otherX - GRID_OFFSET_X) / CELL_SIZE);
@@ -373,7 +375,7 @@ function App() {
     }
 
     return stopY;
-  }, [findStopY]);
+  }, [findStopY, invalidPatchIds]);
 
   // Check if adjacent patches have same pattern using grid-based tracking
   const hasAdjacentSamePattern = useCallback((x: number, y: number, pattern: StitchPattern): boolean => {
