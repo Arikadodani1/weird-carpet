@@ -449,6 +449,36 @@ function App() {
     console.log('🔄 Game restarted');
   }, []);
 
+  // Check if a patch's foundation (patch below it) is invalid (cascading invalidity)
+  const isFoundationInvalid = useCallback((col: number, row: number, currentFallingPatches: PatchType[]): boolean => {
+    // Check the row below this position
+    const rowBelow = row + 1;
+
+    // If at bottom of grid, foundation is solid (grid floor)
+    if (rowBelow >= GRID_ROWS) {
+      return false;
+    }
+
+    // Check if there's a falling patch directly below that is invalid
+    for (const patch of currentFallingPatches) {
+      const patchCol = Math.round((snapToGrid(patch.position.x) - GRID_OFFSET_X) / CELL_SIZE);
+      const patchRow = Math.round(patch.position.y / CELL_SIZE);
+
+      if (patchCol === col && patchRow === rowBelow) {
+        // There's a patch below - check if it's invalid
+        if (invalidPatchIds.has(patch.id)) {
+          return true;
+        }
+        // Also check if THAT patch's foundation is invalid (recursive cascade)
+        if (isFoundationInvalid(col, rowBelow, currentFallingPatches)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }, [invalidPatchIds]);
+
   // Game loop - handles fall animation and collision
   useEffect(() => {
     // Don't animate when paused or grid is full
@@ -520,10 +550,23 @@ function App() {
             const emptyCellsRemaining = (GRID_COLS * GRID_ROWS) - placedPatches.length;
             const inForgivenessMode = emptyCellsRemaining <= FORGIVENESS_THRESHOLD;
 
-            // Skip adjacency check if in forgiveness mode
-            const hasInvalidPlacement = inForgivenessMode
-              ? false
-              : hasAdjacentSamePattern(snappedX, stopY, patch.pattern);
+            // Check for invalid placement
+            let hasInvalidPlacement = false;
+
+            if (!inForgivenessMode) {
+              // Check 1: Same pattern adjacent (original rule)
+              const hasSamePatternAdjacent = hasAdjacentSamePattern(snappedX, stopY, patch.pattern);
+
+              // Check 2: Is this patch sitting on an invalid foundation? (cascading invalidity)
+              const { col: targetCol, row: targetRow } = posToCell(snappedX, stopY);
+              const hasInvalidFoundation = isFoundationInvalid(targetCol, targetRow, prevPatches);
+
+              hasInvalidPlacement = hasSamePatternAdjacent || hasInvalidFoundation;
+
+              if (hasInvalidFoundation && !hasSamePatternAdjacent) {
+                console.log(`Patch ${patch.id} invalid due to foundation (cascading)`);
+              }
+            }
 
             if (hasInvalidPlacement) {
               // Invalid placement - keep falling with feedback
@@ -610,7 +653,7 @@ function App() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isPaused, isGridFull, findEffectiveStopY, hasAdjacentSamePattern, invalidPatchIds, posToCell, occupyCell, placedPatches.length]);
+  }, [isPaused, isGridFull, findEffectiveStopY, hasAdjacentSamePattern, isFoundationInvalid, invalidPatchIds, posToCell, occupyCell, placedPatches.length]);
 
   // Patch generation
   useEffect(() => {
