@@ -182,6 +182,13 @@ function App() {
     }
   }, [placedPatches.length, isGridFull, placedPatches]);
 
+  // Clear falling patches when grid is full
+  useEffect(() => {
+    if (isGridFull) {
+      setFallingPatches([]);
+    }
+  }, [isGridFull]);
+
   // Interaction state helpers
   const getInteractionState = useCallback((patchId: string): InteractionState => {
     if (!interactionStateRef.current.has(patchId)) {
@@ -571,6 +578,12 @@ function App() {
   useEffect(() => {
     if (isGridFull) return;
 
+    // Don't spawn more patches than empty cells
+    const emptyCells = (GRID_COLS * GRID_ROWS) - placedPatches.length;
+    if (fallingPatches.length >= emptyCells) {
+      return;
+    }
+
     if (canSpawnNext && fallingPatches.length < MAX_FALLING_PATCHES) {
       const newPatch = generatePatch();
       if (newPatch) {
@@ -587,7 +600,7 @@ function App() {
         }, PATCH_GENERATION_DELAY);
       }
     }
-  }, [canSpawnNext, fallingPatches.length, generatePatch, isGridFull]);
+  }, [canSpawnNext, fallingPatches.length, generatePatch, isGridFull, placedPatches.length]);
 
   // Cleanup
   useEffect(() => {
