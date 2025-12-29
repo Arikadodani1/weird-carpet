@@ -12,31 +12,28 @@ import {
   MAX_FALLING_PATCHES,
   GRID_HEIGHT,
   GRID_WIDTH,
-  CARPET_ZONE_BOTTOM,
+  GRID_COLS,
+  GRID_ROWS,
   CELL_SIZE,
   GRID_OFFSET_X,
 } from './utils/constants';
 import type { Patch as PatchType, StitchPattern } from './types';
 
 /**
- * Weird Carpet - Phase 3: User Interaction
+ * Weird Carpet - MVP
  *
  * A meditative patch-arrangement game where users arrange falling textile patches
- * on a 6×8 grid. This phase adds tap-to-rotate, drag positioning, and long-press feedback.
+ * on a 6×8 grid.
  *
  * Layout:
  * - Viewport: 400px × 700px
  * - Falling Zone: 0-200px (patches spawn and descend here)
  * - Carpet Zone: 200-600px (6×8 grid, 300×400px)
  * - Bottom Margin: 600-700px (100px UI space)
- *
- * Phase 3 Features:
- * - Tap to rotate (45° increments, 8 orientations)
- * - Drag to position (horizontal + vertical, gravity applies)
- * - Long-press wobble feedback (±10° after 500ms)
- * - Grid snapping (patches align to 50px cells)
- * - Proper collision detection (no overlapping)
  */
+
+// Forgiveness mode threshold - disable adjacency rule when this many cells remain
+const FORGIVENESS_THRESHOLD = 5;
 
 // MVP FIX: Snap X position to nearest column (0-5) with grid offset
 const snapToGrid = (x: number): number => {
@@ -46,7 +43,7 @@ const snapToGrid = (x: number): number => {
   return GRID_OFFSET_X + col * CELL_SIZE;
 };
 
-// Interaction state for tracking drag gestures (MVP: Simple drag only)
+// Interaction state for tracking drag gestures
 interface InteractionState {
   isDragging: boolean;
   dragStartPos: { x: number; y: number };
@@ -58,37 +55,132 @@ function App() {
   const [placedPatches, setPlacedPatches] = useState<PatchType[]>([]);
   const [canSpawnNext, setCanSpawnNext] = useState(true);
   const [isGridFull, setIsGridFull] = useState(false);
-  const [invalidPatchIds, setInvalidPatchIds] = useState<Set<string>>(new Set()); // Patches with invalid placement
+  const [invalidPatchIds, setInvalidPatchIds] = useState<Set<string>>(new Set());
+  const [carpetFeedback, setCarpetFeedback] = useState<string>('');
+  const [milestoneMessage, setMilestoneMessage] = useState<string>('');
+  const [varietyHint, setVarietyHint] = useState<string>('');
 
   const animationFrameRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
   const spawnTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const interactionStateRef = useRef<Map<string, InteractionState>>(new Map());
+  const placingPatchIdsRef = useRef<Set<string>>(new Set());
+
+  // Track which grid cells are occupied: grid[col][row] = { occupied: boolean, pattern: string | null }
+  const gridOccupancy = useRef<{ occupied: boolean; pattern: string | null }[][]>(
+    Array(GRID_COLS).fill(null).map(() =>
+      Array(GRID_ROWS).fill(null).map(() => ({ occupied: false, pattern: null }))
+    )
+  );
 
   // Log grid configuration on startup
   useEffect(() => {
     console.log('=== WEIRD CARPET INITIALIZED ===');
     console.log('Grid Configuration:', {
-      cols: 6,
-      rows: 8,
-      gridWidth: '300px',
-      gridHeight: '400px',
-      carpetZoneBottom: CARPET_ZONE_BOTTOM + 'px',
+      cols: GRID_COLS,
+      rows: GRID_ROWS,
+      gridWidth: GRID_WIDTH + 'px',
+      gridHeight: GRID_HEIGHT + 'px',
+      totalCells: GRID_COLS * GRID_ROWS,
     });
     console.log('===================================');
   }, []);
 
-  // MVP: Stop at exactly 48 squares (6 cols × 8 rows = 48 cells)
-  useEffect(() => {
-    console.log('Placed patches count:', placedPatches.length, 'Grid full?', placedPatches.length >= 48);
+  // Helper: Convert pixel position to grid cell
+  const posToCell = useCallback((x: number, y: number): { col: number; row: number } => {
+    const col = Math.round((x - GRID_OFFSET_X) / CELL_SIZE);
+    const row = Math.round(y / CELL_SIZE);
+    return { col, row };
+  }, []);
 
-    const gridFull = placedPatches.length >= 48;
+  // Helper: Check if a cell is within grid bounds
+  const isValidCell = useCallback((col: number, row: number): boolean => {
+    return col >= 0 && col < GRID_COLS && row >= 0 && row < GRID_ROWS;
+  }, []);
+
+  // Helper: Mark a cell as occupied with pattern
+  const occupyCell = useCallback((col: number, row: number, pattern: StitchPattern) => {
+    if (isValidCell(col, row)) {
+      gridOccupancy.current[col][row] = { occupied: true, pattern };
+      console.log(`Cell occupied: [${col}, ${row}] with pattern: ${pattern}`);
+    }
+  }, [isValidCell]);
+
+  // Check if grid is actually full (all 48 cells occupied)
+  const checkGridFull = useCallback((): boolean => {
+    let occupiedCount = 0;
+    for (let col = 0; col < GRID_COLS; col++) {
+      for (let row = 0; row < GRID_ROWS; row++) {
+        if (gridOccupancy.current[col][row].occupied) {
+          occupiedCount++;
+        }
+      }
+    }
+    console.log(`Grid occupancy check: ${occupiedCount}/${GRID_COLS * GRID_ROWS} cells filled`);
+    return occupiedCount >= GRID_COLS * GRID_ROWS;
+  }, []);
+
+  // Update grid full state when patches change
+  useEffect(() => {
+    const gridFull = checkGridFull();
     setIsGridFull(gridFull);
 
-    if (placedPatches.length === 48) {
-      console.log('🎉 Carpet Complete! Exactly 48 squares placed.');
+    if (gridFull) {
+      console.log('🎉 Carpet Complete! All 48 cells filled.');
     }
-  }, [placedPatches]);
+  }, [placedPatches, checkGridFull]);
+
+  // Calculate feedback ONCE when grid becomes full
+  useEffect(() => {
+    if (isGridFull && placedPatches.length === GRID_COLS * GRID_ROWS && !carpetFeedback) {
+      const feedback = analyzeCarpet(placedPatches);
+      setCarpetFeedback(feedback);
+      console.log('🎉 Final Carpet Analysis:', feedback);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isGridFull, placedPatches.length, carpetFeedback]);
+
+  // Milestone celebrations
+  useEffect(() => {
+    if (placedPatches.length === 12) { // 25%
+      setMilestoneMessage('🌱 Great start!');
+      const timer = setTimeout(() => setMilestoneMessage(''), 2000);
+      return () => clearTimeout(timer);
+    } else if (placedPatches.length === 24) { // 50%
+      setMilestoneMessage('🎨 Halfway there!');
+      const timer = setTimeout(() => setMilestoneMessage(''), 2000);
+      return () => clearTimeout(timer);
+    } else if (placedPatches.length === 36) { // 75%
+      setMilestoneMessage('✨ Looking beautiful!');
+      const timer = setTimeout(() => setMilestoneMessage(''), 2000);
+      return () => clearTimeout(timer);
+    } else if (placedPatches.length === 43) { // Forgiveness mode starts
+      setMilestoneMessage('🏁 Final stretch - place anywhere!');
+      const timer = setTimeout(() => setMilestoneMessage(''), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [placedPatches.length]);
+
+  // Variety encouragement
+  useEffect(() => {
+    if (placedPatches.length > 0 && placedPatches.length % 8 === 0 && !isGridFull) {
+      // Count unique patterns and colors used so far
+      const uniquePatterns = new Set(placedPatches.map(p => p.pattern)).size;
+      const uniqueColors = new Set(placedPatches.map(p => p.color)).size;
+
+      if (uniquePatterns < 3) {
+        setVarietyHint('💡 Try mixing in different patterns!');
+      } else if (uniqueColors < 3) {
+        setVarietyHint('🌈 Add some color variety!');
+      } else if (uniquePatterns >= 5 && uniqueColors >= 5) {
+        setVarietyHint('🎨 Beautiful variety!');
+      }
+
+      // Clear after 2.5 seconds
+      const timer = setTimeout(() => setVarietyHint(''), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [placedPatches.length, isGridFull, placedPatches]);
 
   // Interaction state helpers
   const getInteractionState = useCallback((patchId: string): InteractionState => {
@@ -106,21 +198,54 @@ function App() {
     interactionStateRef.current.delete(patchId);
   }, []);
 
-  // MVP: Generate a random square patch
-  const generatePatch = useCallback((): PatchType => {
-    // Generate unique ID
-    const uniqueId = `patch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  // Generate a random square patch
+  const generatePatch = useCallback((): PatchType | null => {
+    // Find columns with space
+    const availableCols: number[] = [];
+    for (let col = 0; col < GRID_COLS; col++) {
+      // Check if this column has any empty space
+      let hasSpace = false;
+      for (let row = 0; row < GRID_ROWS; row++) {
+        if (!gridOccupancy.current[col][row].occupied) {
+          hasSpace = true;
+          break;
+        }
+      }
+      if (hasSpace) {
+        availableCols.push(col);
+      }
+    }
 
-    // MVP: Only squares
+    // No space = grid full, don't spawn
+    if (availableCols.length === 0) {
+      console.log('All columns full - stopping spawn');
+      return null;
+    }
+
+    const uniqueId = `patch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const shape = 'square';
     const color = COLOR_ARRAY[Math.floor(Math.random() * COLOR_ARRAY.length)];
     const pattern = STITCH_PATTERNS[Math.floor(Math.random() * STITCH_PATTERNS.length)] as StitchPattern;
 
-    // MVP FIX: Spawn in one of 6 columns with grid offset
-    // Columns 0-5: x = 50, 100, 150, 200, 250, 300 (with offset)
-    const col = Math.floor(Math.random() * 6); // 0-5
+    // Pick random available column
+    const col = availableCols[Math.floor(Math.random() * availableCols.length)];
+
+    // Validate column is within bounds
+    if (col < 0 || col >= GRID_COLS) {
+      console.error('Invalid column:', col);
+      return null;
+    }
+
     const startX = GRID_OFFSET_X + col * CELL_SIZE;
-    const startY = -CELL_SIZE - 10; // Just above falling zone
+    const startY = -CELL_SIZE - 10;
+
+    // Validate spawn X position
+    const minX = GRID_OFFSET_X;
+    const maxX = GRID_OFFSET_X + (GRID_COLS - 1) * CELL_SIZE;
+    if (startX < minX || startX > maxX) {
+      console.error('Invalid spawn X:', { startX, minX, maxX, col });
+      return null;
+    }
 
     const newPatch: PatchType = {
       id: uniqueId,
@@ -134,13 +259,11 @@ function App() {
       wiggle: 0,
     };
 
-    console.log('Square spawned:', { id: uniqueId, col, x: startX, y: startY });
+    console.log('Square spawned:', { id: uniqueId, col, x: startX, color, pattern });
     return newPatch;
   }, []);
 
-  // Interaction Handlers (MVP: Drag only, no rotation)
-
-  // Handle drag start (pointer down) - MVP: Simple drag, no long-press
+  // Handle drag start
   const handleDragStart = useCallback((patchId: string, clientX: number, clientY: number) => {
     const patch = fallingPatches.find(p => p.id === patchId);
     if (!patch) return;
@@ -148,10 +271,10 @@ function App() {
     const state = getInteractionState(patchId);
     state.pointerStartPos = { x: clientX, y: clientY };
     state.dragStartPos = { x: patch.position.x, y: patch.position.y };
-    state.isDragging = false; // Will be set to true on first move
+    state.isDragging = false;
   }, [fallingPatches, getInteractionState]);
 
-  // MVP: Handle horizontal drag (squares only)
+  // Handle horizontal and vertical drag
   const handleDrag = useCallback((patchId: string, clientX: number, clientY: number) => {
     const state = getInteractionState(patchId);
     const patch = fallingPatches.find(p => p.id === patchId);
@@ -160,27 +283,31 @@ function App() {
     state.isDragging = true;
 
     const deltaX = clientX - state.pointerStartPos.x;
-    let newX = state.dragStartPos.x + deltaX;
+    const deltaY = clientY - state.pointerStartPos.y;
 
-    // MVP FIX: Constrain to grid bounds with offset
-    // Squares: x = 50 to 300 (columns 0-5)
+    // Horizontal bounds
+    let newX = state.dragStartPos.x + deltaX;
     const minX = GRID_OFFSET_X;
-    const maxX = GRID_OFFSET_X + GRID_WIDTH - CELL_SIZE; // 50 + 300 - 50 = 300
+    const maxX = GRID_OFFSET_X + GRID_WIDTH - CELL_SIZE;
     newX = Math.max(minX, Math.min(maxX, newX));
 
-    // Update patch position (only horizontal drag)
+    // Vertical bounds - allow dragging up but not below grid
+    let newY = state.dragStartPos.y + deltaY;
+    const minY = -CELL_SIZE; // Can go slightly above grid
+    const maxY = GRID_HEIGHT - CELL_SIZE; // Can't go below grid bottom
+    newY = Math.max(minY, Math.min(maxY, newY));
+
     setFallingPatches(prev =>
       prev.map(p =>
         p.id === patchId
-          ? { ...p, position: { x: newX, y: p.position.y } }
+          ? { ...p, position: { x: newX, y: newY } }
           : p
       )
     );
   }, [fallingPatches, getInteractionState]);
 
-  // Handle drag end (pointer up) - MVP FIX: Snap to grid on release
+  // Handle drag end - snap to grid
   const handleDragEnd = useCallback((patchId: string) => {
-    // Snap patch to grid when user releases drag
     setFallingPatches(prev =>
       prev.map(p =>
         p.id === patchId
@@ -188,51 +315,51 @@ function App() {
           : p
       )
     );
-
     clearInteractionState(patchId);
   }, [clearInteractionState]);
 
-  // MVP: Find stop position for square in its column (simplified)
+  // Find stop position for a patch in its column
   const findStopY = useCallback((x: number): number => {
-    // Default: grid bottom (row 7, y = 350)
-    let stopY = GRID_HEIGHT - CELL_SIZE;
+    const col = Math.round((x - GRID_OFFSET_X) / CELL_SIZE);
 
-    // Check each placed patch in same column
-    for (const placed of placedPatches) {
-      if (placed.position.x === x) {
-        // Same column - stop above this patch
-        stopY = Math.min(stopY, placed.position.y - CELL_SIZE);
+    // Find the lowest empty row in this column
+    for (let row = GRID_ROWS - 1; row >= 0; row--) {
+      if (!gridOccupancy.current[col][row].occupied) {
+        return row * CELL_SIZE;
       }
     }
 
-    return stopY;
-  }, [placedPatches]);
+    // Column is full - return -1 to indicate no valid position
+    return -1;
+  }, []);
 
-  // Feature 1: Check if adjacent patches have same pattern
+  // Check if adjacent patches have same pattern using grid-based tracking
   const hasAdjacentSamePattern = useCallback((x: number, y: number, pattern: StitchPattern): boolean => {
-    const neighbors = [
-      { x: x, y: y - CELL_SIZE },      // above
-      { x: x, y: y + CELL_SIZE },      // below
-      { x: x - CELL_SIZE, y: y },      // left
-      { x: x + CELL_SIZE, y: y },      // right
+    const { col, row } = posToCell(x, y);
+
+    // Check all 4 adjacent cells (up, down, left, right)
+    const adjacentCells = [
+      { col, row: row - 1 },  // above
+      { col, row: row + 1 },  // below
+      { col: col - 1, row },  // left
+      { col: col + 1, row },  // right
     ];
 
-    for (const neighbor of neighbors) {
-      const adjacentPatch = placedPatches.find(
-        p => p.position.x === neighbor.x && p.position.y === neighbor.y
-      );
-      if (adjacentPatch && adjacentPatch.pattern === pattern) {
-        return true; // Same pattern found in adjacent cell!
+    for (const cell of adjacentCells) {
+      if (isValidCell(cell.col, cell.row)) {
+        const gridCell = gridOccupancy.current[cell.col][cell.row];
+        if (gridCell.occupied && gridCell.pattern === pattern) {
+          return true;
+        }
       }
     }
     return false;
-  }, [placedPatches]);
+  }, [posToCell, isValidCell]);
 
-  // Feature 2: Analyze carpet for pattern/color variety
+  // Analyze carpet for pattern/color variety
   const analyzeCarpet = useCallback((patches: PatchType[]): string => {
-    // Divide grid into 4 quadrants (accounting for grid offset)
-    const centerX = GRID_OFFSET_X + (GRID_WIDTH / 2);  // 50 + 150 = 200
-    const centerY = GRID_HEIGHT / 2;  // 200
+    const centerX = GRID_OFFSET_X + (GRID_WIDTH / 2);
+    const centerY = GRID_HEIGHT / 2;
 
     const quadrants = {
       topLeft: patches.filter(p => p.position.x < centerX && p.position.y < centerY),
@@ -241,12 +368,9 @@ function App() {
       bottomRight: patches.filter(p => p.position.x >= centerX && p.position.y >= centerY),
     };
 
-    // Count unique patterns per quadrant
     const uniquePatterns = Object.values(quadrants).map(q =>
       new Set(q.map(p => p.pattern)).size
     );
-
-    // Count unique colors per quadrant
     const uniqueColors = Object.values(quadrants).map(q =>
       new Set(q.map(p => p.color)).size
     );
@@ -254,16 +378,7 @@ function App() {
     const avgPatternVariety = uniquePatterns.reduce((a, b) => a + b, 0) / 4;
     const avgColorVariety = uniqueColors.reduce((a, b) => a + b, 0) / 4;
 
-    console.log('Carpet Analysis:', {
-      avgPatternVariety,
-      avgColorVariety,
-      quadrants: {
-        topLeft: { patterns: uniquePatterns[0], colors: uniqueColors[0] },
-        topRight: { patterns: uniquePatterns[1], colors: uniqueColors[1] },
-        bottomLeft: { patterns: uniquePatterns[2], colors: uniqueColors[2] },
-        bottomRight: { patterns: uniquePatterns[3], colors: uniqueColors[3] },
-      }
-    });
+    console.log('Carpet Analysis:', { avgPatternVariety, avgColorVariety });
 
     if (avgPatternVariety >= 4 && avgColorVariety >= 4) {
       return "🎨 Beautifully Chaotic!";
@@ -274,60 +389,113 @@ function App() {
     }
   }, []);
 
-  // Game loop - handles fall animation and wiggle
+  // Restart game
+  const handleRestart = useCallback(() => {
+    setFallingPatches([]);
+    setPlacedPatches([]);
+    setIsGridFull(false);
+    setInvalidPatchIds(new Set());
+    setCanSpawnNext(true);
+    setCarpetFeedback(''); // Reset feedback
+    setMilestoneMessage('');
+    setVarietyHint('');
+    placingPatchIdsRef.current.clear();
+    // Reset grid occupancy
+    gridOccupancy.current = Array(GRID_COLS).fill(null).map(() =>
+      Array(GRID_ROWS).fill(null).map(() => ({ occupied: false, pattern: null }))
+    );
+    console.log('🔄 Game restarted');
+  }, []);
+
+  // Game loop - handles fall animation and collision
   useEffect(() => {
     const animate = (timestamp: number) => {
       if (lastFrameTimeRef.current === 0) {
         lastFrameTimeRef.current = timestamp;
       }
 
-      const deltaTime = (timestamp - lastFrameTimeRef.current) / 1000; // Convert to seconds
+      const deltaTime = (timestamp - lastFrameTimeRef.current) / 1000;
       lastFrameTimeRef.current = timestamp;
 
       setFallingPatches(prevPatches => {
-        const updatedPatches: PatchType[] = []; // Patches still falling
-        const newlyPlacedPatches: PatchType[] = []; // Patches that just collided
+        const updatedPatches: PatchType[] = [];
+        const newlyPlacedPatches: PatchType[] = [];
 
         prevPatches.forEach(patch => {
-          // Calculate wiggle (sine wave oscillation - decorative only)
-          const wiggleProgress = (timestamp % WIGGLE_CYCLE) / WIGGLE_CYCLE;
-          const wiggle = Math.sin(wiggleProgress * Math.PI * 2) * 5; // ±5° decorative wiggle
-
-          // Calculate new position (fall speed: 30px/s)
-          // Gravity applies even while dragging
-          const fallDistance = FALL_SPEED * deltaTime;
-          const state = interactionStateRef.current.get(patch.id);
-          let newY = patch.position.y + fallDistance;
-
-          // If dragging, patch continues to fall but at current drag position
-          // (handleDrag already updated position, we just add gravity)
-          if (state?.isDragging) {
-            newY = patch.position.y + fallDistance;
+          // Skip patches that are already being placed
+          if (placingPatchIdsRef.current.has(patch.id)) {
+            return;
           }
 
-          // MVP: Check if square reached stop position in its column
+          // Calculate wiggle
+          const wiggleProgress = (timestamp % WIGGLE_CYCLE) / WIGGLE_CYCLE;
+          const baseWiggle = Math.sin(wiggleProgress * Math.PI * 2) * 5;
+
+          // Invalid patches wiggle more
+          const isInvalid = invalidPatchIds.has(patch.id);
+          const wiggle = isInvalid ? baseWiggle * 2 : baseWiggle;
+
+          // Check if patch is being dragged - skip collision detection if so
+          const interactionState = interactionStateRef.current.get(patch.id);
+          const isBeingDragged = interactionState?.isDragging === true;
+
+          if (isBeingDragged) {
+            // Don't apply gravity or check collision while being dragged
+            // Just update wiggle and keep at current position
+            updatedPatches.push({
+              ...patch,
+              wiggle,
+            });
+            return;
+          }
+
+          // Calculate fall (only when not being dragged)
+          const fallDistance = FALL_SPEED * deltaTime;
+          let newY = patch.position.y + fallDistance;
+
+          // Check stop position
           const snappedX = snapToGrid(patch.position.x);
           const stopY = findStopY(snappedX);
 
+          // If column is full (stopY === -1), stop at top and mark invalid
+          if (stopY === -1) {
+            // Stop at y=0 (top of grid) and mark as invalid
+            setInvalidPatchIds(prev => new Set(prev).add(patch.id));
+            updatedPatches.push({
+              ...patch,
+              position: { x: snappedX, y: 0 },
+              wiggle: 10, // Intense wiggle to signal user needs to drag elsewhere
+            });
+            return;
+          }
+
           if (newY >= stopY) {
-            // COLLISION - Check if placement is valid (no adjacent same patterns)
-            const hasInvalidPlacement = hasAdjacentSamePattern(snappedX, stopY, patch.pattern);
+            // COLLISION - Check validity
+            // Calculate empty cells for forgiveness mode
+            const emptyCellsRemaining = (GRID_COLS * GRID_ROWS) - placedPatches.length;
+            const inForgivenessMode = emptyCellsRemaining <= FORGIVENESS_THRESHOLD;
+
+            // Skip adjacency check if in forgiveness mode
+            const hasInvalidPlacement = inForgivenessMode
+              ? false
+              : hasAdjacentSamePattern(snappedX, stopY, patch.pattern);
 
             if (hasInvalidPlacement) {
-              // INVALID PLACEMENT - Same pattern adjacent!
-              console.log('❌ Invalid placement:', { id: patch.id, pattern: patch.pattern, x: snappedX, y: stopY });
-
-              // Mark patch as invalid for visual feedback
+              // Invalid placement - keep falling with feedback
               setInvalidPatchIds(prev => new Set(prev).add(patch.id));
-
-              // Keep patch falling with increased wiggle (±10°)
               updatedPatches.push({
                 ...patch,
-                position: { ...patch.position, y: stopY }, // Set to stop position but keep falling
-                wiggle: 10, // Increased wiggle for visual feedback
+                position: { x: snappedX, y: stopY },
+                wiggle: 10,
               });
             } else {
-              // VALID PLACEMENT - Place square at stop position
+              // Valid placement!
+              // Mark as being placed to prevent duplicates
+              placingPatchIdsRef.current.add(patch.id);
+
+              const { col, row } = posToCell(snappedX, stopY);
+              occupyCell(col, row, patch.pattern);
+
               const placedPatch: PatchType = {
                 ...patch,
                 position: { x: snappedX, y: stopY },
@@ -336,11 +504,9 @@ function App() {
                 wiggle: 0,
               };
 
-              const col = (snappedX - GRID_OFFSET_X) / CELL_SIZE;
-              const row = stopY / CELL_SIZE;
-              console.log('✅ Square placed:', { id: patch.id, col, row, x: snappedX, y: stopY, pattern: patch.pattern });
+              console.log('✅ Patch placed:', { id: patch.id, col, row, pattern: patch.pattern, color: patch.color });
+              console.log('Adding to newlyPlacedPatches array');
 
-              // Remove from invalid list if it was there
               setInvalidPatchIds(prev => {
                 const newSet = new Set(prev);
                 newSet.delete(patch.id);
@@ -348,14 +514,9 @@ function App() {
               });
 
               newlyPlacedPatches.push(placedPatch);
-              // CRITICAL: Do NOT add to updatedPatches - remove from fallingPatches!
             }
           } else {
-            // No collision - continue falling with wiggle
-            // Log falling position occasionally for debugging
-            if (Math.random() < 0.05) { // Log 5% of frames
-              console.log('Patch falling:', { id: patch.id, y: newY, bottom: newY + CELL_SIZE });
-            }
+            // Continue falling
             updatedPatches.push({
               ...patch,
               position: { ...patch.position, y: newY },
@@ -364,20 +525,25 @@ function App() {
           }
         });
 
-        // Move newly placed patches to placedPatches state
+        // Move placed patches to state
         if (newlyPlacedPatches.length > 0) {
-          newlyPlacedPatches.forEach(p => {
-            console.log('Patch placed:', {
-              id: p.id,
-              finalY: p.position.y,
-              finalBottom: p.position.y + CELL_SIZE,
-              fallingLength: updatedPatches.length
+          setPlacedPatches(prev => {
+            // Filter out any patches that already exist in placedPatches
+            const existingIds = new Set(prev.map(p => p.id));
+            const uniqueNewPatches = newlyPlacedPatches.filter(p => !existingIds.has(p.id));
+
+            console.log('📊 Updating placedPatches:', {
+              previousCount: prev.length,
+              newPatchesCount: uniqueNewPatches.length,
+              newTotal: prev.length + uniqueNewPatches.length
             });
+
+            // Clear from placing set after successful addition
+            uniqueNewPatches.forEach(p => placingPatchIdsRef.current.delete(p.id));
+
+            return [...prev, ...uniqueNewPatches];
           });
 
-          setPlacedPatches(prev => [...prev, ...newlyPlacedPatches]);
-
-          // Allow new patch to spawn after delay (0.5s)
           if (spawnTimeoutRef.current) {
             clearTimeout(spawnTimeoutRef.current);
           }
@@ -386,7 +552,6 @@ function App() {
           }, PATCH_GENERATION_DELAY);
         }
 
-        // Return only patches that are still falling (removes placed patches from array)
         return updatedPatches;
       });
 
@@ -400,21 +565,19 @@ function App() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [findStopY, hasAdjacentSamePattern]);
+  }, [findStopY, hasAdjacentSamePattern, invalidPatchIds, posToCell, occupyCell]);
 
-  // Patch generation system
+  // Patch generation
   useEffect(() => {
-    // Stop spawning if grid is full
-    if (isGridFull) {
-      return;
-    }
+    if (isGridFull) return;
 
     if (canSpawnNext && fallingPatches.length < MAX_FALLING_PATCHES) {
       const newPatch = generatePatch();
-      setFallingPatches(prev => [...prev, newPatch]);
+      if (newPatch) {
+        setFallingPatches(prev => [...prev, newPatch]);
+      }
       setCanSpawnNext(false);
 
-      // Allow next spawn after initial delay (for the very first patch)
       if (fallingPatches.length === 0) {
         if (spawnTimeoutRef.current) {
           clearTimeout(spawnTimeoutRef.current);
@@ -426,34 +589,27 @@ function App() {
     }
   }, [canSpawnNext, fallingPatches.length, generatePatch, isGridFull]);
 
-  // Cleanup timeout and interaction state on unmount
+  // Cleanup
   useEffect(() => {
     const interactionStates = interactionStateRef.current;
     return () => {
       if (spawnTimeoutRef.current) {
         clearTimeout(spawnTimeoutRef.current);
       }
-      // Clear all interaction states
       interactionStates.clear();
     };
   }, []);
 
   return (
     <div className="app">
-      {/* SVG Pattern Definitions */}
       <StitchPatterns />
 
       <div className="viewport">
-        {/* Falling Zone - Patches descend here */}
-        <div className="falling-zone">
-          {/* Falling patches rendered here (absolute positioning) */}
-        </div>
+        <div className="falling-zone" />
 
-        {/* Carpet Zone - 6×8 Grid where patches accumulate */}
         <div className="carpet-zone">
           <Grid />
 
-          {/* Render all patches (falling and placed) */}
           {[...fallingPatches, ...placedPatches].map(patch => (
             <Patch
               key={patch.id}
@@ -474,26 +630,138 @@ function App() {
           ))}
         </div>
 
-        {/* Bottom Margin - Completion message */}
         <div className="bottom-margin">
+          {/* Progress indicator and feedback during gameplay */}
+          {!isGridFull && (
+            <>
+              {/* Progress bar */}
+              <div style={{
+                textAlign: 'center',
+                padding: '16px',
+                color: '#666',
+              }}>
+                <div style={{ fontSize: '16px', marginBottom: '8px' }}>
+                  {placedPatches.length} / {GRID_COLS * GRID_ROWS} patches
+                </div>
+                <div style={{
+                  width: '200px',
+                  height: '8px',
+                  backgroundColor: '#e0e0e0',
+                  borderRadius: '4px',
+                  overflow: 'hidden',
+                  margin: '0 auto',
+                }}>
+                  <div style={{
+                    width: `${(placedPatches.length / (GRID_COLS * GRID_ROWS)) * 100}%`,
+                    height: '100%',
+                    backgroundColor: '#4ECDC4',
+                    borderRadius: '4px',
+                    transition: 'width 0.3s ease',
+                  }} />
+                </div>
+                {/* Variety hint */}
+                {varietyHint && (
+                  <div style={{
+                    marginTop: '8px',
+                    fontSize: '14px',
+                    color: '#888',
+                  }}>
+                    {varietyHint}
+                  </div>
+                )}
+              </div>
+
+              {/* Invalid placement hint */}
+              {invalidPatchIds.size > 0 && (
+                <div style={{
+                  textAlign: 'center',
+                  padding: '8px 16px',
+                  color: '#FF8C42',
+                  fontSize: '14px',
+                  fontStyle: 'italic',
+                }}>
+                  Same pattern nearby - drag to another column!
+                </div>
+              )}
+
+              {/* Forgiveness mode indicator */}
+              {(GRID_COLS * GRID_ROWS - placedPatches.length) <= FORGIVENESS_THRESHOLD && (
+                <div style={{
+                  textAlign: 'center',
+                  padding: '8px',
+                  fontSize: '14px',
+                  color: '#4ECDC4',
+                  fontWeight: 'bold',
+                }}>
+                  🏁 Final patches - place anywhere!
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Completion UI */}
           {isGridFull && (
             <div style={{
               textAlign: 'center',
-              padding: '20px',
-              fontSize: '20px',
-              fontWeight: 'bold',
-              color: '#333'
+              padding: '24px 20px',
+              width: '100%',
             }}>
-              <div style={{ fontSize: '24px', marginBottom: '10px' }}>
+              <div style={{
+                fontSize: '26px',
+                marginBottom: '8px',
+                fontWeight: 'bold',
+                color: '#333',
+              }}>
                 🎉 Carpet Complete! 🎉
               </div>
-              <div style={{ fontSize: '18px', color: '#666' }}>
-                {analyzeCarpet(placedPatches)}
+              <div style={{
+                fontSize: '20px',
+                color: '#555',
+                marginBottom: '28px',
+              }}>
+                {carpetFeedback}
               </div>
+              <button
+                onClick={handleRestart}
+                style={{
+                  padding: '16px 40px',
+                  fontSize: '18px',
+                  backgroundColor: '#4ECDC4',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '14px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  boxShadow: '0 4px 14px rgba(78, 205, 196, 0.35)',
+                  touchAction: 'manipulation',
+                }}
+              >
+                Make Another Carpet
+              </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* Milestone message popup */}
+      {milestoneMessage && (
+        <div style={{
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          padding: '16px 32px',
+          borderRadius: '12px',
+          fontSize: '20px',
+          fontWeight: 'bold',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+          zIndex: 1000,
+          animation: 'fadeInOut 2s ease',
+        }}>
+          {milestoneMessage}
+        </div>
+      )}
     </div>
   );
 }
