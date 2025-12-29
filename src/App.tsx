@@ -329,18 +329,24 @@ function App() {
   const findStopY = useCallback((x: number): number => {
     const col = Math.round((x - GRID_OFFSET_X) / CELL_SIZE);
 
-    // Find the lowest empty row in this column
+    // Find the lowest empty row in this column from placed patches
+    let stopRow = -1;
     for (let row = GRID_ROWS - 1; row >= 0; row--) {
       if (!gridOccupancy.current[col][row].occupied) {
-        return row * CELL_SIZE;
+        stopRow = row;
+        break;
       }
     }
 
-    // Column is full - return -1 to indicate no valid position
-    return -1;
+    // Column is full
+    if (stopRow === -1) return -1;
+
+    return stopRow * CELL_SIZE;
   }, []);
 
   // Find effective stop position accounting for other falling patches
+  // BUG: Patches sometimes stop halfway down instead of continuing to fall - needs investigation
+  // This happens especially when invalid patches stack. May be related to the falling patch collision detection logic below
   const findEffectiveStopY = useCallback((patch: PatchType, allFallingPatches: PatchType[]): number => {
     const snappedX = snapToGrid(patch.position.x);
     const col = Math.round((snappedX - GRID_OFFSET_X) / CELL_SIZE);
