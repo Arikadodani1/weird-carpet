@@ -55,6 +55,7 @@ function App() {
   const [placedPatches, setPlacedPatches] = useState<PatchType[]>([]);
   const [canSpawnNext, setCanSpawnNext] = useState(true);
   const [isGridFull, setIsGridFull] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [invalidPatchIds, setInvalidPatchIds] = useState<Set<string>>(new Set());
   const [carpetFeedback, setCarpetFeedback] = useState<string>('');
   const [milestoneMessage, setMilestoneMessage] = useState<string>('');
@@ -438,6 +439,7 @@ function App() {
     setFallingPatches([]);
     setPlacedPatches([]);
     setIsGridFull(false);
+    setIsPaused(false);
     setInvalidPatchIds(new Set());
     setCanSpawnNext(true);
     setCarpetFeedback(''); // Reset feedback
@@ -453,6 +455,9 @@ function App() {
 
   // Game loop - handles fall animation and collision
   useEffect(() => {
+    // Don't animate when paused or grid is full
+    if (isPaused || isGridFull) return;
+
     const animate = (timestamp: number) => {
       if (lastFrameTimeRef.current === 0) {
         lastFrameTimeRef.current = timestamp;
@@ -609,11 +614,11 @@ function App() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [findEffectiveStopY, hasAdjacentSamePattern, invalidPatchIds, posToCell, occupyCell, placedPatches.length]);
+  }, [isPaused, isGridFull, findEffectiveStopY, hasAdjacentSamePattern, invalidPatchIds, posToCell, occupyCell, placedPatches.length]);
 
   // Patch generation
   useEffect(() => {
-    if (isGridFull) return;
+    if (isGridFull || isPaused) return;
 
     // Don't spawn more patches than empty cells
     const emptyCells = (GRID_COLS * GRID_ROWS) - placedPatches.length;
@@ -637,7 +642,7 @@ function App() {
         }, PATCH_GENERATION_DELAY);
       }
     }
-  }, [canSpawnNext, fallingPatches.length, generatePatch, isGridFull, placedPatches.length]);
+  }, [canSpawnNext, fallingPatches.length, generatePatch, isGridFull, isPaused, placedPatches.length]);
 
   // Cleanup
   useEffect(() => {
@@ -653,6 +658,50 @@ function App() {
   return (
     <div className="app">
       <StitchPatterns />
+
+      {/* Control buttons */}
+      {!isGridFull && (
+        <div style={{
+          position: 'absolute',
+          top: '10px',
+          right: '10px',
+          display: 'flex',
+          gap: '8px',
+          zIndex: 100,
+        }}>
+          <button
+            onClick={() => setIsPaused(!isPaused)}
+            style={{
+              padding: '8px 16px',
+              fontSize: '16px',
+              backgroundColor: isPaused ? '#4ECDC4' : '#f0f0f0',
+              color: isPaused ? 'white' : '#333',
+              border: '2px solid #333',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              touchAction: 'manipulation',
+            }}
+          >
+            {isPaused ? '▶️ Resume' : '⏸️ Pause'}
+          </button>
+          <button
+            onClick={handleRestart}
+            style={{
+              padding: '8px 12px',
+              fontSize: '18px',
+              backgroundColor: '#f0f0f0',
+              border: '2px solid #333',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              touchAction: 'manipulation',
+            }}
+            title="Restart Game"
+          >
+            🔄
+          </button>
+        </div>
+      )}
 
       <div className="viewport">
         <div className="falling-zone" />
