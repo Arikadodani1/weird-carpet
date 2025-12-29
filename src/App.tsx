@@ -325,7 +325,7 @@ function App() {
     clearInteractionState(patchId);
   }, [clearInteractionState]);
 
-  // Find stop position for a patch in its column
+  // Find stop position for a patch in its column (based on placed patches only)
   const findStopY = useCallback((x: number): number => {
     const col = Math.round((x - GRID_OFFSET_X) / CELL_SIZE);
 
@@ -339,6 +339,35 @@ function App() {
     // Column is full - return -1 to indicate no valid position
     return -1;
   }, []);
+
+  // Find effective stop position accounting for other falling patches
+  const findEffectiveStopY = useCallback((patch: PatchType, allFallingPatches: PatchType[]): number => {
+    const snappedX = snapToGrid(patch.position.x);
+    const col = Math.round((snappedX - GRID_OFFSET_X) / CELL_SIZE);
+
+    // Base stop from placed patches
+    let stopY = findStopY(snappedX);
+
+    // If column is full, return -1
+    if (stopY === -1) return -1;
+
+    // Check other falling patches in same column that are BELOW this patch
+    for (const other of allFallingPatches) {
+      if (other.id === patch.id) continue;
+
+      const otherX = snapToGrid(other.position.x);
+      const otherCol = Math.round((otherX - GRID_OFFSET_X) / CELL_SIZE);
+
+      // If in same column and other patch is below us
+      if (otherCol === col && other.position.y > patch.position.y) {
+        // Stop above the other falling patch
+        const blockingY = other.position.y - CELL_SIZE;
+        stopY = Math.min(stopY, blockingY);
+      }
+    }
+
+    return stopY;
+  }, [findStopY]);
 
   // Check if adjacent patches have same pattern using grid-based tracking
   const hasAdjacentSamePattern = useCallback((x: number, y: number, pattern: StitchPattern): boolean => {
@@ -460,9 +489,9 @@ function App() {
           const fallDistance = FALL_SPEED * deltaTime;
           let newY = patch.position.y + fallDistance;
 
-          // Check stop position
+          // Check stop position (accounting for other falling patches)
           const snappedX = snapToGrid(patch.position.x);
-          const stopY = findStopY(snappedX);
+          const stopY = findEffectiveStopY(patch, prevPatches);
 
           // If column is full (stopY === -1), stop at top and mark invalid
           if (stopY === -1) {
@@ -572,7 +601,7 @@ function App() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [findStopY, hasAdjacentSamePattern, invalidPatchIds, posToCell, occupyCell]);
+  }, [findEffectiveStopY, hasAdjacentSamePattern, invalidPatchIds, posToCell, occupyCell, placedPatches.length]);
 
   // Patch generation
   useEffect(() => {
@@ -644,72 +673,65 @@ function App() {
         </div>
 
         <div className="bottom-margin">
-          {/* Progress indicator and feedback during gameplay */}
+          {/* Milestone message - shown prominently when active */}
+          {milestoneMessage && (
+            <div style={{
+              textAlign: 'center',
+              padding: '8px',
+              fontSize: '18px',
+              fontWeight: 'bold',
+              color: '#4ECDC4',
+              marginBottom: '8px',
+            }}>
+              {milestoneMessage}
+            </div>
+          )}
+
+          {/* Invalid placement hint */}
+          {invalidPatchIds.size > 0 && !isGridFull && (
+            <div style={{
+              textAlign: 'center',
+              fontSize: '14px',
+              color: '#FF8C42',
+              padding: '4px',
+              fontStyle: 'italic',
+            }}>
+              Same pattern nearby - drag to another spot!
+            </div>
+          )}
+
+          {/* Progress bar - only when not complete */}
           {!isGridFull && (
-            <>
-              {/* Progress bar */}
-              <div style={{
-                textAlign: 'center',
-                padding: '16px',
-                color: '#666',
-              }}>
-                <div style={{ fontSize: '16px', marginBottom: '8px' }}>
-                  {placedPatches.length} / {GRID_COLS * GRID_ROWS} patches
-                </div>
-                <div style={{
-                  width: '200px',
-                  height: '8px',
-                  backgroundColor: '#e0e0e0',
-                  borderRadius: '4px',
-                  overflow: 'hidden',
-                  margin: '0 auto',
-                }}>
-                  <div style={{
-                    width: `${(placedPatches.length / (GRID_COLS * GRID_ROWS)) * 100}%`,
-                    height: '100%',
-                    backgroundColor: '#4ECDC4',
-                    borderRadius: '4px',
-                    transition: 'width 0.3s ease',
-                  }} />
-                </div>
-                {/* Variety hint */}
-                {varietyHint && (
-                  <div style={{
-                    marginTop: '8px',
-                    fontSize: '14px',
-                    color: '#888',
-                  }}>
-                    {varietyHint}
-                  </div>
-                )}
+            <div style={{ textAlign: 'center', padding: '12px' }}>
+              <div style={{ fontSize: '16px', color: '#666', marginBottom: '8px' }}>
+                {placedPatches.length} / {GRID_COLS * GRID_ROWS} patches
               </div>
-
-              {/* Invalid placement hint */}
-              {invalidPatchIds.size > 0 && (
+              <div style={{
+                width: '200px',
+                height: '8px',
+                backgroundColor: '#e0e0e0',
+                borderRadius: '4px',
+                margin: '0 auto',
+                overflow: 'hidden',
+              }}>
                 <div style={{
-                  textAlign: 'center',
-                  padding: '8px 16px',
-                  color: '#FF8C42',
+                  width: `${(placedPatches.length / (GRID_COLS * GRID_ROWS)) * 100}%`,
+                  height: '100%',
+                  backgroundColor: '#4ECDC4',
+                  transition: 'width 0.3s ease',
+                }} />
+              </div>
+              {/* Variety hint */}
+              {varietyHint && (
+                <div style={{
+                  marginTop: '8px',
                   fontSize: '14px',
-                  fontStyle: 'italic',
+                  color: '#888',
                 }}>
-                  Same pattern nearby - drag to another column!
+                  {varietyHint}
                 </div>
               )}
-
-              {/* Forgiveness mode indicator */}
-              {(GRID_COLS * GRID_ROWS - placedPatches.length) <= FORGIVENESS_THRESHOLD && (
-                <div style={{
-                  textAlign: 'center',
-                  padding: '8px',
-                  fontSize: '14px',
-                  color: '#4ECDC4',
-                  fontWeight: 'bold',
-                }}>
-                  🏁 Final patches - place anywhere!
-                </div>
-              )}
-            </>
+            </div>
           )}
 
           {/* Completion UI */}
@@ -755,26 +777,6 @@ function App() {
           )}
         </div>
       </div>
-
-      {/* Milestone message popup */}
-      {milestoneMessage && (
-        <div style={{
-          position: 'fixed',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          backgroundColor: 'rgba(255,255,255,0.95)',
-          padding: '16px 32px',
-          borderRadius: '12px',
-          fontSize: '20px',
-          fontWeight: 'bold',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-          zIndex: 1000,
-          animation: 'fadeInOut 2s ease',
-        }}>
-          {milestoneMessage}
-        </div>
-      )}
     </div>
   );
 }

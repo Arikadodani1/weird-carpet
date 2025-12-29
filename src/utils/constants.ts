@@ -5,7 +5,7 @@ export const CELL_SIZE = 50;
 export const GRID_SIZE = GRID_ROWS * GRID_COLS; // 48 cells
 export const GRID_WIDTH = GRID_COLS * CELL_SIZE; // 300px
 export const GRID_HEIGHT = GRID_ROWS * CELL_SIZE; // 400px
-export const GRID_OFFSET_X = 50; // Grid starts 50px from left edge of viewport
+export const GRID_OFFSET_X = 0; // Grid starts at left edge of carpet-zone (300px container)
 
 // Viewport
 export const VIEWPORT_WIDTH = 400;
