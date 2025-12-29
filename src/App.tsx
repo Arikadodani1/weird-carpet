@@ -660,31 +660,23 @@ function App() {
   useEffect(() => {
     if (isGridFull || isPaused) return;
 
-    // Don't spawn if grid is nearly full
-    const emptyCells = (GRID_COLS * GRID_ROWS) - placedPatches.length;
-    if (emptyCells <= 0) {
+    // Count invalid vs valid falling patches separately
+    const invalidFallingCount = fallingPatches.filter(p => invalidPatchIds.has(p.id)).length;
+    const validFallingCount = fallingPatches.length - invalidFallingCount;
+
+    // Don't spawn if too many invalid patches (max 6)
+    if (invalidFallingCount >= MAX_INVALID_PATCHES) {
       return;
     }
 
-    // Count invalid patches currently on grid (in fallingPatches)
-    const currentInvalidCount = fallingPatches.filter(p => invalidPatchIds.has(p.id)).length;
-
-    // Stop spawning if too many invalid patches
-    if (currentInvalidCount >= MAX_INVALID_PATCHES) {
-      console.log(`Spawn paused: ${currentInvalidCount} invalid patches (max: ${MAX_INVALID_PATCHES})`);
-      return;
-    }
-
-    // Count valid falling patches (not invalid)
-    const validFallingCount = fallingPatches.length - currentInvalidCount;
-
-    // Don't exceed max falling patches (for valid patches)
+    // Don't spawn if already have max valid falling patches (max 3)
     if (validFallingCount >= MAX_FALLING_PATCHES) {
       return;
     }
 
-    // Don't spawn more than empty cells allow
-    if (fallingPatches.length >= emptyCells) {
+    // Don't spawn more patches than remaining empty cells
+    const emptyCells = (GRID_COLS * GRID_ROWS) - placedPatches.length;
+    if (emptyCells <= 0 || fallingPatches.length >= emptyCells) {
       return;
     }
 
