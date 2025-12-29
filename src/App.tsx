@@ -680,22 +680,31 @@ function App() {
       return;
     }
 
-    if (canSpawnNext) {
-      const newPatch = generatePatch();
-      if (newPatch) {
-        setFallingPatches(prev => [...prev, newPatch]);
-      }
-      setCanSpawnNext(false);
-
-      if (fallingPatches.length === 0) {
-        if (spawnTimeoutRef.current) {
-          clearTimeout(spawnTimeoutRef.current);
-        }
+    // If we CAN spawn (passed all checks above) but canSpawnNext is false,
+    // set a timer to enable spawning
+    if (!canSpawnNext) {
+      if (!spawnTimeoutRef.current) {
         spawnTimeoutRef.current = setTimeout(() => {
           setCanSpawnNext(true);
+          spawnTimeoutRef.current = null;
         }, PATCH_GENERATION_DELAY);
       }
+      return;
     }
+
+    // Spawn a new patch
+    const newPatch = generatePatch();
+    if (newPatch) {
+      setFallingPatches(prev => [...prev, newPatch]);
+    }
+    setCanSpawnNext(false);
+
+    // Clear any existing timeout
+    if (spawnTimeoutRef.current) {
+      clearTimeout(spawnTimeoutRef.current);
+      spawnTimeoutRef.current = null;
+    }
+
   }, [canSpawnNext, fallingPatches, generatePatch, isGridFull, isPaused, placedPatches.length, invalidPatchIds]);
 
   // Cleanup
