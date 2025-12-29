@@ -34,6 +34,7 @@ import type { Patch as PatchType, StitchPattern } from './types';
 
 // Forgiveness mode threshold - disable adjacency rule when this many cells remain
 const FORGIVENESS_THRESHOLD = 5;
+const MAX_INVALID_PATCHES = 6; // Stop spawning when this many invalid patches exist
 
 // MVP FIX: Snap X position to nearest column (0-5) with grid offset
 const snapToGrid = (x: number): number => {
@@ -659,13 +660,35 @@ function App() {
   useEffect(() => {
     if (isGridFull || isPaused) return;
 
-    // Don't spawn more patches than empty cells
+    // Don't spawn if grid is nearly full
     const emptyCells = (GRID_COLS * GRID_ROWS) - placedPatches.length;
+    if (emptyCells <= 0) {
+      return;
+    }
+
+    // Count invalid patches currently on grid (in fallingPatches)
+    const currentInvalidCount = fallingPatches.filter(p => invalidPatchIds.has(p.id)).length;
+
+    // Stop spawning if too many invalid patches
+    if (currentInvalidCount >= MAX_INVALID_PATCHES) {
+      console.log(`Spawn paused: ${currentInvalidCount} invalid patches (max: ${MAX_INVALID_PATCHES})`);
+      return;
+    }
+
+    // Count valid falling patches (not invalid)
+    const validFallingCount = fallingPatches.length - currentInvalidCount;
+
+    // Don't exceed max falling patches (for valid patches)
+    if (validFallingCount >= MAX_FALLING_PATCHES) {
+      return;
+    }
+
+    // Don't spawn more than empty cells allow
     if (fallingPatches.length >= emptyCells) {
       return;
     }
 
-    if (canSpawnNext && fallingPatches.length < MAX_FALLING_PATCHES) {
+    if (canSpawnNext) {
       const newPatch = generatePatch();
       if (newPatch) {
         setFallingPatches(prev => [...prev, newPatch]);
@@ -681,7 +704,7 @@ function App() {
         }, PATCH_GENERATION_DELAY);
       }
     }
-  }, [canSpawnNext, fallingPatches.length, generatePatch, isGridFull, isPaused, placedPatches.length]);
+  }, [canSpawnNext, fallingPatches, generatePatch, isGridFull, isPaused, placedPatches.length, invalidPatchIds]);
 
   // Cleanup
   useEffect(() => {
