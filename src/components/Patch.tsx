@@ -163,6 +163,7 @@ const Patch: React.FC<PatchProps> = ({
         top: `${y}px`,
         transform: `rotate(${rotation + wiggle}deg)`,
         willChange: 'transform',
+        zIndex: isPointerDown ? 100 : (isFalling ? 10 : 1),
       }}
       onPointerDown={isFalling ? handlePointerDown : undefined}
       onPointerMove={isFalling ? handlePointerMove : undefined}

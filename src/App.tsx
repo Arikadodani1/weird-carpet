@@ -625,6 +625,30 @@ function App() {
             }
           }
 
+          // If patch is currently ABOVE its stopY and not being dragged, it needs to fall
+          // This handles the case where support below was removed
+          if (!isBeingDragged && patch.position.y < stopY - 5) {
+            // Patch needs to fall further - continue falling
+            const fallDistance = FALL_SPEED * deltaTime;
+            const newY = Math.min(patch.position.y + fallDistance, stopY);
+
+            // Clear invalid status while falling (will re-evaluate when settled)
+            if (invalidPatchIds.has(patch.id)) {
+              setInvalidPatchIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(patch.id);
+                return newSet;
+              });
+            }
+
+            updatedPatches.push({
+              ...patch,
+              position: { x: snappedX, y: newY },
+              wiggle: baseWiggle,
+            });
+            return;
+          }
+
           // Invalid patches wiggle more
           const isInvalid = invalidPatchIds.has(patch.id);
           const wiggle = isInvalid ? baseWiggle * 2 : baseWiggle;
