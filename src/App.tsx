@@ -214,18 +214,28 @@ function App() {
 
   // Generate a random square patch
   const generatePatch = useCallback((): PatchType | null => {
-    // Find columns with space
+    // Find columns with space (checking BOTH placed AND falling patches)
     const availableCols: number[] = [];
     for (let col = 0; col < GRID_COLS; col++) {
-      // Check if this column has any empty space
-      let hasSpace = false;
+      // Count placed patches in this column
+      let placedInCol = 0;
       for (let row = 0; row < GRID_ROWS; row++) {
-        if (!gridOccupancy.current[col][row].occupied) {
-          hasSpace = true;
-          break;
+        if (gridOccupancy.current[col][row].occupied) {
+          placedInCol++;
         }
       }
-      if (hasSpace) {
+
+      // Count falling patches in this column
+      let fallingInCol = 0;
+      for (const patch of fallingPatches) {
+        const patchCol = Math.round((snapToGrid(patch.position.x) - GRID_OFFSET_X) / CELL_SIZE);
+        if (patchCol === col) {
+          fallingInCol++;
+        }
+      }
+
+      // Column has space if placed + falling < total rows
+      if (placedInCol + fallingInCol < GRID_ROWS) {
         availableCols.push(col);
       }
     }
@@ -275,7 +285,7 @@ function App() {
 
     console.log('Square spawned:', { id: uniqueId, col, x: startX, color, pattern });
     return newPatch;
-  }, []);
+  }, [fallingPatches]);
 
   // Handle drag start
   const handleDragStart = useCallback((patchId: string, clientX: number, clientY: number) => {
