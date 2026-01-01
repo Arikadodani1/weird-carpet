@@ -664,15 +664,24 @@ function App() {
 
         // Re-evaluate cascading invalidity for all patches
         // When one patch's validity changes, patches above it may need to update
+        const emptyCellsRemaining = (GRID_COLS * GRID_ROWS) - placedPatches.length;
+        const inForgivenessMode = emptyCellsRemaining <= FORGIVENESS_THRESHOLD;
+
         for (const patch of updatedPatches) {
           const patchX = snapToGrid(patch.position.x);
           const patchGridY = Math.round(patch.position.y / CELL_SIZE) * CELL_SIZE;
           const { col, row } = posToCell(patchX, patchGridY);
 
-          // Check if this patch should be invalid due to foundation
-          const hasInvalidFoundation = isFoundationInvalid(col, row, updatedPatches);
-          const hasSamePatternAdjacent = hasAdjacentSamePattern(patchX, patchGridY, patch.pattern);
-          const shouldBeInvalid = hasInvalidFoundation || hasSamePatternAdjacent;
+          let shouldBeInvalid = false;
+
+          // Only check validity if NOT in forgiveness mode
+          if (!inForgivenessMode) {
+            // Check if this patch should be invalid due to foundation
+            const hasInvalidFoundation = isFoundationInvalid(col, row, updatedPatches);
+            const hasSamePatternAdjacent = hasAdjacentSamePattern(patchX, patchGridY, patch.pattern);
+            shouldBeInvalid = hasInvalidFoundation || hasSamePatternAdjacent;
+          }
+
           const isCurrentlyInvalid = invalidPatchIds.has(patch.id);
 
           if (shouldBeInvalid && !isCurrentlyInvalid) {
