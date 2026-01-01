@@ -759,13 +759,28 @@ function App() {
         // CRITICAL FIX: Remove any patches that were placed from updatedPatches
         // This prevents duplication - patches should ONLY be in placedPatches OR fallingPatches, never both
         const placedPatchIds = new Set(newlyPlacedPatches.map(p => p.id));
+        const duplicatesInUpdated = updatedPatches.filter(p => placedPatchIds.has(p.id));
+
+        if (duplicatesInUpdated.length > 0) {
+          console.error('🚨 DUPLICATION FOUND: Patches in BOTH updatedPatches AND newlyPlacedPatches!', {
+            duplicateIds: duplicatesInUpdated.map(p => p.id.slice(-6)),
+            duplicatePatches: duplicatesInUpdated.map(p => ({
+              id: p.id.slice(-6),
+              pos: `(${p.position.x}, ${p.position.y})`,
+              isFalling: p.isFalling,
+              isPlaced: p.isPlaced
+            }))
+          });
+        }
+
         const finalUpdatedPatches = updatedPatches.filter(p => !placedPatchIds.has(p.id));
 
         if (finalUpdatedPatches.length !== updatedPatches.length) {
           console.warn('🔧 FIXED DUPLICATION: Removed placed patches from updatedPatches', {
             before: updatedPatches.length,
             after: finalUpdatedPatches.length,
-            removed: updatedPatches.length - finalUpdatedPatches.length
+            removed: updatedPatches.length - finalUpdatedPatches.length,
+            removedIds: duplicatesInUpdated.map(p => p.id.slice(-6))
           });
         }
 
