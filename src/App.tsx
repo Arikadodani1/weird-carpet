@@ -608,12 +608,19 @@ function App() {
 
             if (hasInvalidPlacement) {
               // Invalid - stay at stopY with wiggle
+              console.log('❌ Invalid patch at floor:', {
+                id: patch.id.slice(-6),
+                col: Math.round((snappedX - GRID_OFFSET_X) / CELL_SIZE),
+                row: Math.round(stopY / CELL_SIZE),
+                reason: hasInvalidPlacement
+              });
               setInvalidPatchIds(prev => new Set(prev).add(patch.id));
               updatedPatches.push({
                 ...patch,
                 position: { x: snappedX, y: stopY },
                 wiggle: 10,
               });
+              console.log('  → Added to updatedPatches (will stay in fallingPatches)');
             } else {
               // Valid - place it
               const { col, row } = posToCell(snappedX, stopY);
@@ -629,6 +636,8 @@ function App() {
                 return;
               }
 
+              console.log('✅ Valid patch - placing:', { id: patch.id.slice(-6), col, row, pattern: patch.pattern, color: patch.color });
+
               occupyCell(col, row, patch.pattern);
 
               const placedPatch: PatchType = {
@@ -639,8 +648,6 @@ function App() {
                 wiggle: 0,
               };
 
-              console.log('✅ Patch placed:', { id: patch.id, col, row, pattern: patch.pattern, color: patch.color });
-
               setInvalidPatchIds(prev => {
                 const newSet = new Set(prev);
                 newSet.delete(patch.id);
@@ -648,6 +655,8 @@ function App() {
               });
 
               newlyPlacedPatches.push(placedPatch);
+              console.log('  → Added to newlyPlacedPatches (will move to placedPatches)');
+              console.log('  → NOT added to updatedPatches (will be removed from fallingPatches)');
             }
           } else {
             // Not settled - continue falling
@@ -713,14 +722,26 @@ function App() {
 
         // Move placed patches to state
         if (newlyPlacedPatches.length > 0) {
+          console.log('🔄 Processing newlyPlacedPatches:', newlyPlacedPatches.map(p => p.id.slice(-6)));
+
           setPlacedPatches(prev => {
             // Filter out any patches that already exist in placedPatches
             const existingIds = new Set(prev.map(p => p.id));
             const uniqueNewPatches = newlyPlacedPatches.filter(p => !existingIds.has(p.id));
 
+            const duplicates = newlyPlacedPatches.filter(p => existingIds.has(p.id));
+            if (duplicates.length > 0) {
+              console.error('⚠️ DUPLICATE PATCHES DETECTED:', duplicates.map(p => ({
+                id: p.id.slice(-6),
+                pos: `(${p.position.x}, ${p.position.y})`
+              })));
+            }
+
             console.log('📊 Updating placedPatches:', {
               previousCount: prev.length,
-              newPatchesCount: uniqueNewPatches.length,
+              newPatchesAttempted: newlyPlacedPatches.length,
+              duplicatesFiltered: duplicates.length,
+              actuallyAdding: uniqueNewPatches.length,
               newTotal: prev.length + uniqueNewPatches.length
             });
 
@@ -734,6 +755,14 @@ function App() {
             setCanSpawnNext(true);
           }, PATCH_GENERATION_DELAY);
         }
+
+        console.log('📋 Animation frame complete:', {
+          prevPatchesCount: prevPatches.length,
+          updatedPatchesCount: updatedPatches.length,
+          newlyPlacedCount: newlyPlacedPatches.length,
+          updatedPatchIds: updatedPatches.map(p => p.id.slice(-6)),
+          newlyPlacedIds: newlyPlacedPatches.map(p => p.id.slice(-6))
+        });
 
         return updatedPatches;
       });
