@@ -756,15 +756,28 @@ function App() {
           }, PATCH_GENERATION_DELAY);
         }
 
+        // CRITICAL FIX: Remove any patches that were placed from updatedPatches
+        // This prevents duplication - patches should ONLY be in placedPatches OR fallingPatches, never both
+        const placedPatchIds = new Set(newlyPlacedPatches.map(p => p.id));
+        const finalUpdatedPatches = updatedPatches.filter(p => !placedPatchIds.has(p.id));
+
+        if (finalUpdatedPatches.length !== updatedPatches.length) {
+          console.warn('🔧 FIXED DUPLICATION: Removed placed patches from updatedPatches', {
+            before: updatedPatches.length,
+            after: finalUpdatedPatches.length,
+            removed: updatedPatches.length - finalUpdatedPatches.length
+          });
+        }
+
         console.log('📋 Animation frame complete:', {
           prevPatchesCount: prevPatches.length,
-          updatedPatchesCount: updatedPatches.length,
+          updatedPatchesCount: finalUpdatedPatches.length,
           newlyPlacedCount: newlyPlacedPatches.length,
-          updatedPatchIds: updatedPatches.map(p => p.id.slice(-6)),
+          updatedPatchIds: finalUpdatedPatches.map(p => p.id.slice(-6)),
           newlyPlacedIds: newlyPlacedPatches.map(p => p.id.slice(-6))
         });
 
-        return updatedPatches;
+        return finalUpdatedPatches;
       });
 
       animationFrameRef.current = requestAnimationFrame(animate);
