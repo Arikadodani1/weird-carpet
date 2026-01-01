@@ -66,7 +66,6 @@ function App() {
   const lastFrameTimeRef = useRef<number>(0);
   const spawnTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const interactionStateRef = useRef<Map<string, InteractionState>>(new Map());
-  const placingPatchIdsRef = useRef<Set<string>>(new Set());
 
   // Track which grid cells are occupied: grid[col][row] = { occupied: boolean, pattern: string | null }
   const gridOccupancy = useRef<{ occupied: boolean; pattern: string | null }[][]>(
@@ -355,14 +354,49 @@ function App() {
     clearInteractionState(patchId);
   }, [clearInteractionState]);
 
-  // Find stop position for a patch in its column (based on placed patches only)
-  const findStopY = useCallback((x: number): number => {
+  // Simplified stop position calculation - considers both placed and settled falling patches
+  const findStopY = useCallback((x: number, allFallingPatches: PatchType[], currentPatchId: string): number => {
     const col = Math.round((x - GRID_OFFSET_X) / CELL_SIZE);
 
-    // Find the lowest empty row in this column from placed patches
+    // Build a Set of occupied rows in this column
+    const occupiedRows = new Set<number>();
+
+    // Add rows from placed patches (gridOccupancy)
+    for (let row = 0; row < GRID_ROWS; row++) {
+      if (gridOccupancy.current[col][row].occupied) {
+        occupiedRows.add(row);
+      }
+    }
+
+    // Add rows from OTHER settled falling patches
+    for (const patch of allFallingPatches) {
+      if (patch.id === currentPatchId) continue;
+
+      // Skip patches being dragged
+      const interactionState = interactionStateRef.current.get(patch.id);
+      if (interactionState?.isDragging) continue;
+
+      const patchX = snapToGrid(patch.position.x);
+      const patchCol = Math.round((patchX - GRID_OFFSET_X) / CELL_SIZE);
+
+      if (patchCol === col) {
+        // Check if patch is at a grid-aligned Y position (settled)
+        const patchGridY = Math.round(patch.position.y / CELL_SIZE) * CELL_SIZE;
+        const isSettled = Math.abs(patch.position.y - patchGridY) < 2;
+
+        if (isSettled) {
+          const patchRow = Math.round(patch.position.y / CELL_SIZE);
+          if (patchRow >= 0 && patchRow < GRID_ROWS) {
+            occupiedRows.add(patchRow);
+          }
+        }
+      }
+    }
+
+    // Find the lowest empty row
     let stopRow = -1;
     for (let row = GRID_ROWS - 1; row >= 0; row--) {
-      if (!gridOccupancy.current[col][row].occupied) {
+      if (!occupiedRows.has(row)) {
         stopRow = row;
         break;
       }
@@ -371,76 +405,9 @@ function App() {
     // Column is full
     if (stopRow === -1) return -1;
 
-    // IMPORTANT: Ensure stopY is never negative
-    const stopY = stopRow * CELL_SIZE;
-    return Math.max(0, stopY);
+    // Return Y position (ensure non-negative)
+    return Math.max(0, stopRow * CELL_SIZE);
   }, []);
-
-  // Find effective stop position accounting for other falling patches
-  const findEffectiveStopY = useCallback((patch: PatchType, allFallingPatches: PatchType[]): number => {
-    const snappedX = snapToGrid(patch.position.x);
-    const col = Math.round((snappedX - GRID_OFFSET_X) / CELL_SIZE);
-
-    // Base stop from placed patches (grid floor for this column)
-    const baseStopY = findStopY(snappedX);
-
-    // If column is full from placed patches, return -1
-    if (baseStopY === -1) return -1;
-
-    let stopY = baseStopY;
-
-    // Check other falling patches in same column
-    for (const other of allFallingPatches) {
-      if (other.id === patch.id) continue;
-
-      // Skip patches being dragged
-      const otherInteractionState = interactionStateRef.current.get(other.id);
-      if (otherInteractionState?.isDragging) continue;
-
-      const otherX = snapToGrid(other.position.x);
-      const otherCol = Math.round((otherX - GRID_OFFSET_X) / CELL_SIZE);
-
-      if (otherCol !== col) continue;
-
-      // Calculate where this other patch WILL settle (its own stop position)
-      // We need to find the base stop for this other patch too
-      let otherBaseStopY = baseStopY;
-
-      // Check patches below the other patch to find its true stop
-      for (const below of allFallingPatches) {
-        if (below.id === other.id || below.id === patch.id) continue;
-
-        const belowX = snapToGrid(below.position.x);
-        const belowCol = Math.round((belowX - GRID_OFFSET_X) / CELL_SIZE);
-
-        if (belowCol === col && below.position.y > other.position.y) {
-          // There's another patch below - check if IT is settled
-          const belowGridY = Math.round(below.position.y / CELL_SIZE) * CELL_SIZE;
-          const belowIsSettled = Math.abs(below.position.y - belowGridY) < 5;
-
-          if (belowIsSettled) {
-            otherBaseStopY = Math.min(otherBaseStopY, belowGridY - CELL_SIZE);
-          }
-        }
-      }
-
-      // Now check if the OTHER patch has reached ITS stop position
-      const otherGridY = Math.round(other.position.y / CELL_SIZE) * CELL_SIZE;
-      const otherIsSettled = other.position.y >= otherBaseStopY - 5 && Math.abs(other.position.y - otherGridY) < 10;
-
-      // ONLY treat as obstacle if:
-      // 1. Other patch is SETTLED (at its stop position)
-      // 2. Other patch is BELOW our current patch
-      if (otherIsSettled && other.position.y > patch.position.y) {
-        const blockingY = otherGridY - CELL_SIZE;
-        if (blockingY >= 0) {
-          stopY = Math.min(stopY, blockingY);
-        }
-      }
-    }
-
-    return Math.max(0, stopY);
-  }, [findStopY]);
 
   // Check if adjacent patches have same pattern using grid-based tracking
   const hasAdjacentSamePattern = useCallback((x: number, y: number, pattern: StitchPattern): boolean => {
@@ -509,7 +476,6 @@ function App() {
     setCarpetFeedback(''); // Reset feedback
     setMilestoneMessage('');
     setVarietyHint('');
-    placingPatchIdsRef.current.clear();
     // Reset grid occupancy
     gridOccupancy.current = Array(GRID_COLS).fill(null).map(() =>
       Array(GRID_ROWS).fill(null).map(() => ({ occupied: false, pattern: null }))
@@ -568,79 +534,44 @@ function App() {
         const updatedPatches: PatchType[] = [];
         const newlyPlacedPatches: PatchType[] = [];
 
-        prevPatches.forEach(patch => {
+        // Calculate wiggle (shared for all patches)
+        const wiggleProgress = (timestamp % WIGGLE_CYCLE) / WIGGLE_CYCLE;
+        const baseWiggle = Math.sin(wiggleProgress * Math.PI * 2) * 5;
+
+        // FIRST PASS: Calculate stopY and isSettled for each patch
+        const patchStates = prevPatches.map(patch => {
           const snappedX = snapToGrid(patch.position.x);
-          const stopY = findEffectiveStopY(patch, prevPatches);
+          const stopY = findStopY(snappedX, prevPatches, patch.id);
           const interactionState = interactionStateRef.current.get(patch.id);
           const isBeingDragged = interactionState?.isDragging === true;
 
-          // Log patch state every few seconds (not every frame)
-          if (Math.random() < 0.01) { // ~1% of frames
-            console.log('Patch state:', {
-              id: patch.id.slice(-6),
-              y: Math.round(patch.position.y),
-              stopY,
-              isBeingDragged,
-              isInvalid: invalidPatchIds.has(patch.id),
-              inPlacingSet: placingPatchIdsRef.current.has(patch.id),
-            });
-          }
+          // A patch is settled if:
+          // - Column is full (stopY === -1) and stuck at top
+          // - OR patch has reached its stop position (within 1px)
+          const isSettled = stopY === -1 || patch.position.y >= stopY - 1;
 
-          // DETECT STUCK: If patch is not at stopY, not being dragged, and in placing set
-          // This means it got stuck - remove from placing set so it can continue falling
-          if (!isBeingDragged &&
-              patch.position.y < stopY &&
-              placingPatchIdsRef.current.has(patch.id)) {
-            console.error('UNSTICKING PATCH:', {
-              id: patch.id.slice(-6),
-              y: patch.position.y,
-              stopY,
-              reason: 'Removing from placingPatchIds - will resume falling'
-            });
-            placingPatchIdsRef.current.delete(patch.id);
-          }
+          return { patch, snappedX, stopY, isBeingDragged, isSettled };
+        });
 
-          // Skip patches that are already being placed (and not stuck)
-          if (placingPatchIdsRef.current.has(patch.id)) {
+        // SECOND PASS: Process each patch based on pre-calculated state
+        patchStates.forEach(({ patch, snappedX, stopY, isBeingDragged, isSettled }) => {
+          // Invalid patches wiggle more
+          const isInvalid = invalidPatchIds.has(patch.id);
+          const wiggle = isInvalid ? baseWiggle * 2 : baseWiggle;
+
+          // Dragged patches: keep at current position with wiggle
+          if (isBeingDragged) {
+            updatedPatches.push({
+              ...patch,
+              wiggle,
+            });
             return;
           }
 
-          // Calculate wiggle
-          const wiggleProgress = (timestamp % WIGGLE_CYCLE) / WIGGLE_CYCLE;
-          const baseWiggle = Math.sin(wiggleProgress * Math.PI * 2) * 5;
-
-          // SAFETY: If patch is above grid and not being dragged, force it to fall
+          // Patches above grid: force them to fall
           if (patch.position.y < 0) {
-            if (!isBeingDragged) {
-              // Patch is above grid - let it fall
-              const fallDistance = FALL_SPEED * deltaTime;
-              const newY = patch.position.y + fallDistance;
-
-              updatedPatches.push({
-                ...patch,
-                position: { x: snappedX, y: newY },
-                wiggle: baseWiggle,
-              });
-              return; // Skip normal processing for this patch
-            }
-          }
-
-          // If patch is currently ABOVE its stopY and not being dragged, it needs to fall
-          // This handles the case where support below was removed
-          if (!isBeingDragged && patch.position.y < stopY - 5) {
-            // Patch needs to fall further - continue falling
             const fallDistance = FALL_SPEED * deltaTime;
-            const newY = Math.min(patch.position.y + fallDistance, stopY);
-
-            // Clear invalid status while falling (will re-evaluate when settled)
-            if (invalidPatchIds.has(patch.id)) {
-              setInvalidPatchIds(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(patch.id);
-                return newSet;
-              });
-            }
-
+            const newY = patch.position.y + fallDistance;
             updatedPatches.push({
               ...patch,
               position: { x: snappedX, y: newY },
@@ -649,62 +580,34 @@ function App() {
             return;
           }
 
-          // Invalid patches wiggle more
-          const isInvalid = invalidPatchIds.has(patch.id);
-          const wiggle = isInvalid ? baseWiggle * 2 : baseWiggle;
-
-          if (isBeingDragged) {
-            // Don't apply gravity or check collision while being dragged
-            // Just update wiggle and keep at current position
-            updatedPatches.push({
-              ...patch,
-              wiggle,
-            });
-            return;
-          }
-
-          // Calculate fall (only when not being dragged)
-          const fallDistance = FALL_SPEED * deltaTime;
-          let newY = patch.position.y + fallDistance;
-
-          // If column is full (stopY === -1), stop at top and mark invalid
+          // Column full: stop at top and mark invalid
           if (stopY === -1) {
-            // Stop at y=0 (top of grid) and mark as invalid
             setInvalidPatchIds(prev => new Set(prev).add(patch.id));
             updatedPatches.push({
               ...patch,
               position: { x: snappedX, y: 0 },
-              wiggle: 10, // Intense wiggle to signal user needs to drag elsewhere
+              wiggle: 10,
             });
             return;
           }
 
-          if (newY >= stopY) {
-            // COLLISION - Check validity
-            // Calculate empty cells for forgiveness mode
+          // Settled (reached stopY): check validity and maybe place
+          if (isSettled) {
             const emptyCellsRemaining = (GRID_COLS * GRID_ROWS) - placedPatches.length;
             const inForgivenessMode = emptyCellsRemaining <= FORGIVENESS_THRESHOLD;
 
-            // Check for invalid placement
             let hasInvalidPlacement = false;
 
             if (!inForgivenessMode) {
-              // Check 1: Same pattern adjacent (original rule)
               const hasSamePatternAdjacent = hasAdjacentSamePattern(snappedX, stopY, patch.pattern);
-
-              // Check 2: Is this patch sitting on an invalid foundation? (cascading invalidity)
               const { col: targetCol, row: targetRow } = posToCell(snappedX, stopY);
               const hasInvalidFoundation = isFoundationInvalid(targetCol, targetRow, prevPatches);
 
               hasInvalidPlacement = hasSamePatternAdjacent || hasInvalidFoundation;
-
-              if (hasInvalidFoundation && !hasSamePatternAdjacent) {
-                console.log(`Patch ${patch.id} invalid due to foundation (cascading)`);
-              }
             }
 
             if (hasInvalidPlacement) {
-              // Invalid placement - keep falling with feedback
+              // Invalid - stay at stopY with wiggle
               setInvalidPatchIds(prev => new Set(prev).add(patch.id));
               updatedPatches.push({
                 ...patch,
@@ -712,20 +615,15 @@ function App() {
                 wiggle: 10,
               });
             } else {
-              // Valid placement!
-              // Mark as being placed to prevent duplicates
-              placingPatchIdsRef.current.add(patch.id);
-
+              // Valid - place it
               const { col, row } = posToCell(snappedX, stopY);
 
-              // Validate position before placing
+              // Validate grid bounds
               if (row < 0 || row >= GRID_ROWS || col < 0 || col >= GRID_COLS) {
                 console.error('Invalid placement position:', { col, row, stopY });
-                // Keep patch falling - don't place at invalid position
-                placingPatchIdsRef.current.delete(patch.id);
                 updatedPatches.push({
                   ...patch,
-                  position: { x: snappedX, y: patch.position.y },
+                  position: { x: snappedX, y: stopY },
                   wiggle: baseWiggle,
                 });
                 return;
@@ -742,7 +640,6 @@ function App() {
               };
 
               console.log('✅ Patch placed:', { id: patch.id, col, row, pattern: patch.pattern, color: patch.color });
-              console.log('Adding to newlyPlacedPatches array');
 
               setInvalidPatchIds(prev => {
                 const newSet = new Set(prev);
@@ -753,10 +650,13 @@ function App() {
               newlyPlacedPatches.push(placedPatch);
             }
           } else {
-            // Continue falling
+            // Not settled - continue falling
+            const fallDistance = FALL_SPEED * deltaTime;
+            const newY = Math.min(patch.position.y + fallDistance, stopY);
+
             updatedPatches.push({
               ...patch,
-              position: { ...patch.position, y: newY },
+              position: { x: snappedX, y: newY },
               wiggle,
             });
           }
@@ -789,8 +689,7 @@ function App() {
         // SAFETY NET: Log if any patches were lost
         const processedIds = new Set([
           ...updatedPatches.map(p => p.id),
-          ...newlyPlacedPatches.map(p => p.id),
-          ...Array.from(placingPatchIdsRef.current)
+          ...newlyPlacedPatches.map(p => p.id)
         ]);
 
         const lostPatches = prevPatches.filter(p => !processedIds.has(p.id));
@@ -816,9 +715,6 @@ function App() {
               newTotal: prev.length + uniqueNewPatches.length
             });
 
-            // Clear from placing set after successful addition
-            uniqueNewPatches.forEach(p => placingPatchIdsRef.current.delete(p.id));
-
             return [...prev, ...uniqueNewPatches];
           });
 
@@ -843,7 +739,7 @@ function App() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isPaused, isGridFull, findEffectiveStopY, hasAdjacentSamePattern, isFoundationInvalid, invalidPatchIds, posToCell, occupyCell, placedPatches.length]);
+  }, [isPaused, isGridFull, findStopY, hasAdjacentSamePattern, isFoundationInvalid, invalidPatchIds, posToCell, occupyCell, placedPatches.length]);
 
   // Patch generation
   useEffect(() => {
@@ -961,7 +857,8 @@ function App() {
         <div className="carpet-zone">
           <Grid />
 
-          {[...fallingPatches, ...placedPatches].map(patch => (
+          {/* Render placed patches first (behind falling patches) */}
+          {placedPatches.map(patch => (
             <Patch
               key={patch.id}
               id={patch.id}
@@ -979,6 +876,51 @@ function App() {
               onDragEnd={handleDragEnd}
             />
           ))}
+
+          {/* Sort falling patches for proper z-index layering:
+              1. Lower Y position first (bottom of stack)
+              2. Invalid patches before valid ones
+              3. Dragged patches last (on top) */}
+          {(() => {
+            const sortedFalling = [...fallingPatches].sort((a, b) => {
+              const aIsBeingDragged = interactionStateRef.current.get(a.id)?.isDragging === true;
+              const bIsBeingDragged = interactionStateRef.current.get(b.id)?.isDragging === true;
+
+              // Dragged patches always render last (on top)
+              if (aIsBeingDragged && !bIsBeingDragged) return 1;
+              if (!aIsBeingDragged && bIsBeingDragged) return -1;
+
+              const aIsInvalid = invalidPatchIds.has(a.id);
+              const bIsInvalid = invalidPatchIds.has(b.id);
+
+              // Invalid patches render before valid ones
+              if (aIsInvalid && !bIsInvalid) return -1;
+              if (!aIsInvalid && bIsInvalid) return 1;
+
+              // Lower Y position renders first (behind)
+              return a.position.y - b.position.y;
+            });
+
+            return sortedFalling.map((patch, index) => (
+              <Patch
+                key={patch.id}
+                id={patch.id}
+                shape={patch.shape}
+                color={patch.color}
+                pattern={patch.pattern}
+                x={patch.position.x}
+                y={patch.position.y}
+                rotation={0}
+                wiggle={patch.wiggle || 0}
+                isFalling={patch.isFalling}
+                isInvalid={invalidPatchIds.has(patch.id)}
+                zIndexOffset={index}
+                onDragStart={handleDragStart}
+                onDrag={handleDrag}
+                onDragEnd={handleDragEnd}
+              />
+            ));
+          })()}
         </div>
 
         <div className="bottom-margin">

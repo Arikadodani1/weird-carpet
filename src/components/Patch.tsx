@@ -14,6 +14,7 @@ export interface PatchProps {
   wiggle?: number; // Wiggle offset in degrees (±5° or ±10° for invalid), decorative only
   isFalling?: boolean; // Only attach event handlers to falling patches
   isInvalid?: boolean; // Invalid placement (same pattern adjacent)
+  zIndexOffset?: number; // Z-index offset for render order (default 0)
   id?: string; // Patch ID for event handler callbacks
   onDragStart?: (id: string, clientX: number, clientY: number) => void;
   onDrag?: (id: string, clientX: number, clientY: number) => void;
@@ -30,7 +31,7 @@ export interface PatchProps {
  */
 const Patch: React.FC<PatchProps> = ({
   shape, color, pattern, x, y, rotation = 0, wiggle = 0,
-  isFalling = false, isInvalid = false, id, onDragStart, onDrag, onDragEnd
+  isFalling = false, isInvalid = false, zIndexOffset = 0, id, onDragStart, onDrag, onDragEnd
 }) => {
   const [isPointerDown, setIsPointerDown] = useState(false);
 
@@ -163,7 +164,7 @@ const Patch: React.FC<PatchProps> = ({
         top: `${y}px`,
         transform: `rotate(${rotation + wiggle}deg)`,
         willChange: 'transform',
-        zIndex: isPointerDown ? 100 : (isFalling ? 10 : 1),
+        zIndex: isPointerDown ? 200 : (isFalling ? 10 + zIndexOffset : 1),
       }}
       onPointerDown={isFalling ? handlePointerDown : undefined}
       onPointerMove={isFalling ? handlePointerMove : undefined}
